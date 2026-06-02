@@ -1,0 +1,72 @@
+# Manifold Emotions — non-secret configuration.
+# Secrets (API keys, etc.) live in .env; this file references them by name.
+
+model:
+    hf_id: /home/nymph/Models/gemma-4-31B-it-Q4_K_S.gguf
+    quantization: gguf
+    num_layers: 60
+    target_layer: 40
+    hook_point: post_mlp
+    tensor_parallel_size: 1
+
+vllm_server:
+    # Base URL for the OpenAI-compatible endpoint exposed by the custom fork.
+    base_url: http://localhost:8000/v1
+    api_key_env: VLLM_API_KEY
+    steering_api_key_env: VLLM_STEERING_API_KEY
+    max_model_len: 4096
+    max_num_seqs: 32
+    max_steering_configs: 64
+    enable_steering: true
+
+capture:
+    # Root directory the filesystem capture consumer writes to.
+    root: ./data/captures
+    writer_threads: 4
+    queue_size: 1024
+
+judge:
+    provider: anthropic
+    model: claude-sonnet-4-6
+    api_key_env: ANTHROPIC_API_KEY
+    # Max concurrent judge calls.
+    concurrency: 16
+
+corpus:
+    # Phase 1 shakedown size. Scale to full once pipeline is clean.
+    shakedown:
+        num_emotions: 30
+        stories_per_emotion: 50
+        topics_per_emotion: 1
+    full:
+        num_emotions: 171
+        stories_per_emotion: 12
+        topics_per_emotion: 100
+
+extraction:
+    # Tokens before this index are skipped when computing centroids
+    # (per Anthropic: emotional content should be apparent past token 50).
+    skip_tokens_before: 50
+    # Subspace dim is non-monotonic for manifold-steering benefit.
+    # Empirically (terrified↔serene, excited↔weary at K=30/N=10):
+    #   4-D: manifold E gets worse, geodesic detours through emotion-
+    #        meaningful but trajectory-irrelevant regions
+    #   8-D: sweet spot — captures PC1≈arousal, PC2≈valence, and
+    #        per-cluster content; ~83% variance
+    #   16-D: manifold E gets worse, geodesic follows extra emotion-
+    #        irrelevant variance
+    # 8 is the operating point.
+    pca_subspace_dim: 8
+
+manifold:
+    # Which fitting approach to run first. Options: g_e (density EBM),
+    # circumplex (tensor-product trunk + per-cluster fibers).
+    primary: g_e
+    secondary: circumplex
+
+paths:
+    emotion_words: ./data/emotion_words.txt
+    story_corpus: ./data/stories.jsonl
+    emotion_vectors: ./data/emotion_vectors.npz
+    manifold_h: ./data/manifold_h.npz
+    manifold_y: ./data/manifold_y.npz

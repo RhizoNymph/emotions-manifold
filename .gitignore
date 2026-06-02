@@ -1,0 +1,35 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+.env
+
+# Generated data
+data/captures/
+data/stories.jsonl
+data/emotion_vectors.npz
+data/manifold_h.npz
+data/manifold_y.npz
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/
+
+data
+logs
+results
+CLAUDE.md
+.marker-venv
+.claude
+.pytest_cache
+.ruff_cache
+extract_pdfs.py

@@ -1,0 +1,47 @@
+[project]
+name = "manifold-emotions"
+version = "0.1.0"
+description = "Manifold steering across an emotion concept manifold"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dash>=4.1.0",
+    "httpx>=0.28.1",
+    "jax>=0.10.1",
+    "matplotlib>=3.10.9",
+    "numpy>=2.4.6",
+    "plotly>=6.7.0",
+    "polars>=1.41.1",
+    "python-dotenv>=1.2.2",
+    "pyyaml>=6.0.3",
+    "scikit-learn>=1.8.0",
+    "scipy>=1.17.1",
+    "structlog>=25.5.0",
+    "umap-learn>=0.5.12",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.15.14",
+    "ty>=0.0.40",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/manifold_emotions"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
