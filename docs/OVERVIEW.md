@@ -63,6 +63,31 @@ Features Index:
     entry_points: [scripts/check_isometry.py]
     depends_on: [manifold_h, behavior_manifold]
     doc: docs/features/isometry.md
+  manifold_alternatives:
+    description: Alternative embeddings (UMAP, diffusion maps) and adaptive-bandwidth KDE for the activation manifold; geometric and geodesic isometry comparisons
+    entry_points: [scripts/embedding_isometry.py, scripts/manifold_alternatives.py]
+    depends_on: [emotion_vectors, behavior_manifold]
+    doc: docs/features/manifold_alternatives.md
+  dimension_ablation:
+    description: G_E geodesic isometry edge as a function of PCA subspace dimensionality (4/8/16/32 + denser 6/10/12/14/24)
+    entry_points: [scripts/run_dimension_ablation.py, scripts/run_denser_dim_sweep.py]
+    depends_on: [manifold_h, behavior_manifold]
+    doc: docs/features/dimension_ablation.md
+  d6_behavioral:
+    description: Behavioral re-run of n=40 chord at d=6 (where the denser dim sweep showed peak G_E edge +0.085), parallel to d=4 and d=8 setups
+    entry_points: [scripts/setup_6d_pipeline.py, scripts/run_pullback_experiment_6d.py, scripts/alift_6d_chain.sh, scripts/analyze_geodesic_vs_linear_6d.py]
+    depends_on: [manifold_h, behavior_manifold]
+    doc: docs/features/d6_behavioral.md
+  time_varying_steering:
+    description: Stepping through waypoints during generation (K=8 segments × 12 tokens) via vLLM /v1/completions with manual Gemma chat template — Goodfire's central distinguishing claim
+    entry_points: [scripts/run_time_varying_steering.py, scripts/run_time_varying_chain.sh, scripts/analyze_time_varying.py]
+    depends_on: [manifold_h, behavior_manifold]
+    doc: docs/features/time_varying_steering.md
+  positive_controls:
+    description: 4-D linear vs 8-D linear positive control disentangling "curved metric helps" from "geodesic compensates for dim loss"
+    entry_points: [scripts/analyze_4d_linear_vs_8d_linear.py]
+    depends_on: []
+    doc: docs/features/positive_controls.md
   dashboard:
     description: 3D plotly Dash viewer for M_h paths and M_y projections; interactive σ slider for pullback
     entry_points: [scripts/dashboard.py]
