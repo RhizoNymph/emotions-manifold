@@ -30,6 +30,14 @@ Run with:
 Optional flags:
     --port 8080         # different port
     --no-precompute     # error if cache missing instead of building it
+    --manifold-dim 4    # load the 4-D variant (requires data/manifold_h_4d_full.npz
+                        # and data/geodesics_cache_4d.npz from setup_4d_pipeline.py)
+
+Side-by-side comparison (8-D vs 4-D):
+    uv run python scripts/dashboard.py --port 8050                   # 8-D production
+    uv run python scripts/dashboard.py --port 8051 --manifold-dim 4  # 4-D
+Open both URLs in separate browser windows and select the same pair to
+flip between regimes.
 """
 
 from __future__ import annotations
@@ -53,6 +61,10 @@ from manifold_emotions.manifold.pullback import construct_pullback_path
 GEODESIC_CACHE = Path("data/geodesics_cache.npz")
 PAIR_ALIGNMENT = Path("results/pair_alignment.json")
 
+# Optional 4-D variant (built by scripts/setup_4d_pipeline.py).
+MANIFOLD_4D_PATH = Path("data/manifold_h_4d_full.npz")
+GEODESIC_CACHE_4D = Path("data/geodesics_cache_4d.npz")
+
 PATH_COLORS = {
     "geodesic": "#0066cc",
     "linear":   "#888888",
@@ -65,9 +77,11 @@ PATH_COLORS = {
 # ---------------------------------------------------------------------------
 
 
-def _load_geodesic_cache() -> tuple[np.ndarray, dict[tuple[int, int], int]]:
+def _load_geodesic_cache(
+    cache_path: Path = GEODESIC_CACHE,
+) -> tuple[np.ndarray, dict[tuple[int, int], int]]:
     """Load precomputed geodesic waypoints, return (waypoints, idx_map)."""
-    data = np.load(GEODESIC_CACHE, allow_pickle=True)
+    data = np.load(cache_path, allow_pickle=True)
     waypoints = data["waypoints"]
     pair_indices = data["pair_indices"]
     idx_map: dict[tuple[int, int], int] = {}
@@ -343,12 +357,17 @@ def make_my_figure(
 # ---------------------------------------------------------------------------
 
 
-def build_app() -> Dash:
+def build_app(
+    manifold_path: Path | None = None,
+    geodesic_cache_path: Path = GEODESIC_CACHE,
+) -> Dash:
     config = load_config()
-    manifold = FittedManifold.load(config.paths.manifold_h)
+    manifold = FittedManifold.load(
+        manifold_path if manifold_path is not None else config.paths.manifold_h
+    )
     behavior = BehaviorManifold.load(config.paths.manifold_y)
 
-    waypoints_cache, idx_map = _load_geodesic_cache()
+    waypoints_cache, idx_map = _load_geodesic_cache(geodesic_cache_path)
     measured = _load_measured_deltas()
     predictions = _load_alignment_predictions()
 
@@ -362,7 +381,9 @@ def build_app() -> Dash:
 
     umap_cache: dict[int, object] = {}
 
-    app = Dash(__name__, title="Manifold Emotions Explorer")
+    dim = centroids.shape[1]
+    app = Dash(__name__,
+               title=f"Manifold Emotions Explorer ({dim}-D M_h)")
 
     pca_axis_options = [
         {"label": f"PC{i+1} ({var_ratio[i]*100:.1f}%)", "value": i}
@@ -373,10 +394,12 @@ def build_app() -> Dash:
 
     app.layout = html.Div([
         html.Div([
-            html.H2("Manifold Emotions Explorer",
+            html.H2(f"Manifold Emotions Explorer  ·  {dim}-D M_h",
                     style={"margin": "0", "fontFamily": "system-ui"}),
             html.Div(
-                f"8-D M_h subspace, {n} emotions, bandwidth={manifold.kde_bandwidth:.2f}",
+                f"{dim}-D M_h subspace, {n} emotions, "
+                f"bandwidth={manifold.kde_bandwidth:.2f}, "
+                f"cumulative variance={float(var_ratio.sum())*100:.1f}%",
                 style={"color": "#666", "fontSize": "13px"},
             ),
         ], style={"padding": "10px 20px", "borderBottom": "1px solid #ddd"}),
@@ -712,20 +735,42 @@ def main() -> None:
         ),
     )
     parser.add_argument("--no-precompute", action="store_true")
+    parser.add_argument(
+        "--manifold-dim", type=int, default=8, choices=(4, 8),
+        help=(
+            "PCA subspace dimensionality to visualize. 8 (default) loads the "
+            "production manifold + geodesics_cache.npz. 4 loads "
+            "manifold_h_4d_full.npz + geodesics_cache_4d.npz (built by "
+            "scripts/setup_4d_pipeline.py). Run two instances on different "
+            "ports (e.g. 8050 and 8051) for side-by-side comparison."
+        ),
+    )
     args = parser.parse_args()
 
-    if not GEODESIC_CACHE.exists():
-        if args.no_precompute:
+    if args.manifold_dim == 4:
+        manifold_path = MANIFOLD_4D_PATH
+        cache_path = GEODESIC_CACHE_4D
+        if not manifold_path.exists() or not cache_path.exists():
             raise SystemExit(
-                f"geodesic cache missing at {GEODESIC_CACHE} and "
-                "--no-precompute was set; run scripts/precompute_geodesics.py"
+                f"4-D artifacts missing at {manifold_path} and/or {cache_path}. "
+                f"Run scripts/setup_4d_pipeline.py first."
             )
-        print(f"no cache at {GEODESIC_CACHE}; precomputing now ...")
-        import subprocess
-        subprocess.check_call(["uv", "run", "python",
-                               "scripts/precompute_geodesics.py"])
+    else:
+        manifold_path = None  # default to config.paths.manifold_h
+        cache_path = GEODESIC_CACHE
+        if not cache_path.exists():
+            if args.no_precompute:
+                raise SystemExit(
+                    f"geodesic cache missing at {cache_path} and "
+                    "--no-precompute was set; run scripts/precompute_geodesics.py"
+                )
+            print(f"no cache at {cache_path}; precomputing now ...")
+            import subprocess
+            subprocess.check_call(["uv", "run", "python",
+                                   "scripts/precompute_geodesics.py"])
 
-    app = build_app()
+    app = build_app(manifold_path=manifold_path,
+                    geodesic_cache_path=cache_path)
     app.run(debug=False, host=args.host, port=args.port)
 
 

@@ -6,11 +6,17 @@ outputs) and writes a small set of PNGs to ``results/figures/``.
 
 Run with:
     uv run python scripts/visualize.py
+
+For just the isometry scatter on alternative datasets / subspace dims:
+    uv run python scripts/visualize.py --variant 171em-8d
+    uv run python scripts/visualize.py --variant 30em-4d --variant 171em-4d
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -24,6 +30,60 @@ from manifold_emotions.manifold.fit import FittedManifold
 from manifold_emotions.vectors.diff_in_means import EmotionVectors
 
 FIGS = Path("results/figures")
+
+
+@dataclass(frozen=True)
+class IsometryVariant:
+    """One (emotion-set, PCA-dim) configuration for the isometry scatter."""
+
+    name: str
+    emotion_vectors_path: Path
+    manifold_h_path: Path
+    manifold_y_path: Path
+    dataset_label: str  # human-readable, e.g. "171 emotions"
+    output_name: str  # filename under FIGS/
+
+
+# Preset variants: emotion count × PCA subspace dimensionality.
+# - 30em-8d  : original 30-emotion data + 8-D KDE/kernel-regression subspace
+#              (matches the existing isometry_scatter.png file we preserve)
+# - 30em-4d  : 30-emotion data + 4-D subspace used for manifold fitting
+# - 171em-8d : full 171-emotion data + 8-D KDE/kernel-regression subspace
+# - 171em-4d : full 171-emotion data + 4-D subspace used for manifold fitting
+ISOMETRY_VARIANTS: dict[str, IsometryVariant] = {
+    "30em-8d": IsometryVariant(
+        name="30em-8d",
+        emotion_vectors_path=Path("data/30emotions/emotion_vectors.npz"),
+        manifold_h_path=Path("data/30emotions/manifold_h.npz"),
+        manifold_y_path=Path("data/30emotions/manifold_y.npz"),
+        dataset_label="30 emotions",
+        output_name="isometry_scatter_30em_8d.png",
+    ),
+    "30em-4d": IsometryVariant(
+        name="30em-4d",
+        emotion_vectors_path=Path("data/30emotions/emotion_vectors.npz"),
+        manifold_h_path=Path("data/manifold_h_4d.npz"),
+        manifold_y_path=Path("data/30emotions/manifold_y.npz"),
+        dataset_label="30 emotions",
+        output_name="isometry_scatter_30em_4d.png",
+    ),
+    "171em-8d": IsometryVariant(
+        name="171em-8d",
+        emotion_vectors_path=Path("data/171emotions/emotion_vectors.npz"),
+        manifold_h_path=Path("data/171emotions/manifold_h.npz"),
+        manifold_y_path=Path("data/171emotions/manifold_y.npz"),
+        dataset_label="171 emotions",
+        output_name="isometry_scatter_171em_8d.png",
+    ),
+    "171em-4d": IsometryVariant(
+        name="171em-4d",
+        emotion_vectors_path=Path("data/171emotions/emotion_vectors.npz"),
+        manifold_h_path=Path("data/manifold_h_4d_full.npz"),
+        manifold_y_path=Path("data/171emotions/manifold_y.npz"),
+        dataset_label="171 emotions",
+        output_name="isometry_scatter_171em_4d.png",
+    ),
+}
 
 
 def _cluster_color(valence: float, arousal: float) -> str:
@@ -128,12 +188,21 @@ def plot_affective_circumplex(
     print(f"  wrote {out}")
 
 
-def plot_isometry(
+def _plot_isometry_scatter(
     ev: EmotionVectors,
     mh: FittedManifold,
     my: BehaviorManifold,
+    *,
+    out_path: Path,
+    dataset_label: str | None = None,
 ) -> None:
-    """Pairwise-distance scatter: M_h subspace + full-D vs M_y."""
+    """Pairwise-distance scatter: M_h subspace + full-D vs M_y.
+
+    The subspace dimensionality is inferred from ``mh.centroids_subspace``
+    and the activation-space dimensionality from ``ev.centroids``, so the
+    same plotter works for the 8-D KDE/kernel-regression subspace and the
+    4-D manifold-fitting subspace, and for any emotion count.
+    """
     common = tuple(sorted(set(mh.labels) & set(my.labels) & set(ev.labels)))
     idx_mh = [mh.labels.index(label) for label in common]
     idx_my = [my.labels.index(label) for label in common]
@@ -146,32 +215,62 @@ def plot_isometry(
     r_sub = float(np.corrcoef(d_sub, d_my)[0, 1])
     r_full = float(np.corrcoef(d_full, d_my)[0, 1])
 
+    subspace_dim = mh.centroids_subspace.shape[1]
+    full_dim = ev.centroids.shape[1]
+    dataset_text = dataset_label or f"{len(common)} emotions"
+
     fig, axes = plt.subplots(1, 2, figsize=(12, 5.5))
 
     ax = axes[0]
     ax.scatter(d_sub, d_my, s=14, alpha=0.5, c="#1f77b4")
-    ax.set_xlabel("Pairwise distance in $M_h$ (8-D PCA subspace)")
+    ax.set_xlabel(f"Pairwise distance in $M_h$ ({subspace_dim}-D PCA subspace)")
     ax.set_ylabel("Pairwise distance in $M_y$ (valence, arousal)")
     ax.set_title(f"Subspace isometry — Pearson r = {r_sub:.3f}")
     ax.grid(True, alpha=0.3)
 
     ax = axes[1]
     ax.scatter(d_full, d_my, s=14, alpha=0.5, c="#d62728")
-    ax.set_xlabel("Pairwise distance in full 5376-D activation space")
+    ax.set_xlabel(f"Pairwise distance in full {full_dim}-D activation space")
     ax.set_ylabel("Pairwise distance in $M_y$ (valence, arousal)")
     ax.set_title(f"Linear baseline isometry — Pearson r = {r_full:.3f}")
     ax.grid(True, alpha=0.3)
 
     fig.suptitle(
-        f"Isometry between activation and behavior — {len(common)} emotions, "
+        f"Isometry between activation and behavior — {dataset_text}, "
         f"{len(d_sub)} pairs",
         fontsize=12,
     )
     fig.tight_layout()
-    out = FIGS / "isometry_scatter.png"
-    fig.savefig(out, dpi=140, bbox_inches="tight")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=140, bbox_inches="tight")
     plt.close(fig)
-    print(f"  wrote {out}")
+    print(f"  wrote {out_path}  (r_sub={r_sub:+.3f}, r_full={r_full:+.3f})")
+
+
+def plot_isometry(
+    ev: EmotionVectors,
+    mh: FittedManifold,
+    my: BehaviorManifold,
+) -> None:
+    """Original default: writes ``results/figures/isometry_scatter.png``.
+
+    Preserves the legacy filename and behavior used by the no-arg run.
+    """
+    _plot_isometry_scatter(ev, mh, my, out_path=FIGS / "isometry_scatter.png")
+
+
+def plot_isometry_variant(variant: IsometryVariant) -> None:
+    """Run the isometry scatter for one preset (emotion-set, subspace-dim) combo."""
+    ev = EmotionVectors.load(variant.emotion_vectors_path)
+    mh = FittedManifold.load(variant.manifold_h_path)
+    my = BehaviorManifold.load(variant.manifold_y_path)
+    _plot_isometry_scatter(
+        ev,
+        mh,
+        my,
+        out_path=FIGS / variant.output_name,
+        dataset_label=variant.dataset_label,
+    )
 
 
 def plot_trajectories(
@@ -374,8 +473,37 @@ def plot_pca_variance(mh: FittedManifold) -> None:
     print(f"  wrote {out}")
 
 
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--variant",
+        action="append",
+        choices=sorted(ISOMETRY_VARIANTS),
+        default=None,
+        help=(
+            "Generate the isometry scatter for the given preset "
+            "(emotion-set, subspace-dim). Repeatable. When supplied, only the "
+            "isometry plot(s) for the chosen variants are produced and the "
+            "default full-figure run is skipped. The legacy isometry_scatter.png "
+            "is left untouched."
+        ),
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = _parse_args()
     FIGS.mkdir(parents=True, exist_ok=True)
+
+    if args.variant:
+        print("generating isometry scatter variants...")
+        for variant_name in args.variant:
+            variant = ISOMETRY_VARIANTS[variant_name]
+            print(f"  variant: {variant.name}  ({variant.dataset_label})")
+            plot_isometry_variant(variant)
+        print(f"\nvariants saved under {FIGS}/")
+        return
+
     config = load_config()
     ev = EmotionVectors.load(config.paths.emotion_vectors)
     mh = FittedManifold.load(config.paths.manifold_h)
