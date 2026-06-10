@@ -31,7 +31,7 @@ manifold" rather than "the curved metric is essential."
 
 ## Files
 
-- `scripts/analyze_4d_linear_vs_8d_linear.py` — reads existing 4-D
+- `scripts/analysis/analyze_4d_linear_vs_8d_linear.py` — reads existing 4-D
   and 8-D pullback data, computes paired comparison.
 
 ## Outputs

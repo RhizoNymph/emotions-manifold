@@ -27,16 +27,16 @@ geometric-vs-behavioral dissociation story).
 
 ## Files
 
-- `scripts/setup_6d_pipeline.py` — fits + precomputes geodesics.
+- `scripts/fit_manifold.py --dim 6 --geodesics` — fits + precomputes geodesics.
   Outputs `data/manifold_h_6d_full.npz` and `data/geodesics_cache_6d.npz`.
-- `scripts/run_pullback_experiment_6d.py` — single-pair runner;
+- `scripts/experiments/run_chord.py --config experiments/chord_6d.yaml` — single-pair runner;
   outputs to `results/pullback_6d/{pair}.json` and `data/pullback_6d/`.
-- `scripts/alift_6d_chain.sh` — runs all 40 pairs split across both vLLMs.
-- `scripts/orchestrate_6d_overnight.sh` — waits for setup, then runs
+- `scripts/orchestration/run_chain.py --config experiments/chord_6d.yaml` — runs all 40 pairs split across both vLLMs.
+- `scripts/orchestration/run_chain.py` — waits for setup, then runs
   chain, then runs analysis.
-- `scripts/analyze_geodesic_vs_linear_6d.py` — Wilcoxon / bootstrap
+- `scripts/analysis/analyze_chord.py --results-dir results/pullback_6d` — Wilcoxon / bootstrap
   / margin summary; outputs `results/riemannian_analysis_6d/_summary.json`.
-- `scripts/analyze_dim_behavioral_compare.py` — 3-way d∈{4,6,8} per-pair
+- `scripts/analysis/analyze_dim_behavioral_compare.py` — 3-way d∈{4,6,8} per-pair
   comparison once all three are available.
 
 ## Invariants
