@@ -22,7 +22,7 @@ done
 echo "$(date '+%F %T')  A-lift done; running composition expansion" | tee -a "$LOG"
 
 # Norm-matched (the primary condition — original was confounded by magnitude)
-uv run python -u scripts/run_composition_experiment.py \
+uv run python -u scripts/experiments/run_composition_experiment.py \
     --plan-file data/probe/composition_expansion_plan.json \
     --norm-match \
     --results-dir results/composition_expansion_nm \
@@ -30,7 +30,7 @@ uv run python -u scripts/run_composition_experiment.py \
     2>&1 | tee -a "$LOG"
 
 # Also run original magnitude condition so we have both
-uv run python -u scripts/run_composition_experiment.py \
+uv run python -u scripts/experiments/run_composition_experiment.py \
     --plan-file data/probe/composition_expansion_plan.json \
     --results-dir results/composition_expansion_raw \
     --data-dir data/composition_expansion_raw \

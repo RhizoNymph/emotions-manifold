@@ -20,7 +20,7 @@ done
 echo "$(date '+%F %T')  diff done, starting contrastive wide sweep" | tee -a "$LOG"
 
 SCALES="-500,-200,-100,-50,-20,-10,-5,0,+5,+10,+20,+50,+100,+200,+500"
-uv run python -u scripts/run_eval_awareness_steering.py \
+uv run python -u scripts/experiments/run_eval_awareness_steering.py \
   --direction-file results/eval_awareness_contrastive/full_contrastive_eval.npy \
   --scales="$SCALES" \
   --results-dir results/eval_steering_contr_wide \

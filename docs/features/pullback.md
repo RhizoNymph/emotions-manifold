@@ -69,7 +69,7 @@ numbers.
   off-M_y E and M_y-line distance per trajectory.
 - `scripts/experiments/run_chord.py` — CLI for a single pair or
   default 4-pair sweep; accepts `--sigma <float>` or `--sigma knn:K`.
-- `scripts/run_pullback_sigma_sweep.py` — sweeps a list of σ values on
+- `scripts/experiments/run_pullback_sigma_sweep.py` — sweeps a list of σ values on
   a single pair, reusing the same kernel-barycenter machinery.
 - `scripts/plotting/dashboard.py` — interactive σ slider on the 3D viewer; only
   constant σ for now.
