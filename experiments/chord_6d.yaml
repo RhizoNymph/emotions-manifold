@@ -1,0 +1,6 @@
+# 6-D variant of the chord experiment — motivated by the denser dim sweep
+# (G_E geometric edge peaks at d=6).
+# Manifold from: scripts/fit_manifold.py --dim 6 --out-manifold data/manifold_h_6d_full.npz
+name: pullback_6d
+manifold: data/manifold_h_6d_full.npz
+judge: sequential

@@ -25,18 +25,22 @@ encodes the behavior manifold's metric structure.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 
-from ..behavior.judge_text import judge_texts
+from ..behavior.judge_text import TextRating, judge_texts
 from ..behavior.manifold import BehaviorManifold
 from ..config import Config
 from ..manifold.fit import FittedManifold
-from ..manifold.pullback import compute_pullback, PullbackResult, SigmaSpec
+from ..manifold.pullback import PullbackResult, SigmaSpec, compute_pullback
 from .experiment import _aggregate_waypoint_behavior, _off_manifold_energy, _text_id
 from .trajectory import SteeredContinuation, generate_along_path
+
+# Signature shared by judge_texts and judge_texts_batched.
+JudgeFn = Callable[..., Awaitable[dict[str, TextRating]]]
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,8 +103,14 @@ async def run_pullback_experiment(
     steering_scale: float = 8.0,
     judge_cache_path: Path | None = None,
     sigma: SigmaSpec = None,
+    judge_fn: JudgeFn | None = None,
 ) -> PullbackExperimentReport:
-    """End-to-end: build pullback + baselines, steer, judge, summarize."""
+    """End-to-end: build pullback + baselines, steer, judge, summarize.
+
+    ``judge_fn`` defaults to the sequential ``judge_texts``; pass
+    ``judge_texts_batched`` (same signature and cache shape) to rate via
+    the Batches API instead.
+    """
 
     geom = compute_pullback(
         manifold, behavior, start_label, end_label,
@@ -140,7 +150,8 @@ async def run_pullback_experiment(
     for cont in linear_cont:
         passages.append((f"linear_{pair_tag}_{_text_id(cont)}", cont.text))
 
-    ratings = await judge_texts(config, passages, cache_path=judge_cache_path)
+    judge = judge_fn if judge_fn is not None else judge_texts
+    ratings = await judge(config, passages, cache_path=judge_cache_path)
 
     def index_ratings(prefix: str) -> dict[str, tuple[float, float]]:
         out: dict[str, tuple[float, float]] = {}

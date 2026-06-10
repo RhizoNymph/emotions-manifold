@@ -1,0 +1,5 @@
+# 4-D variant of the chord experiment (dimension-ablation behavioral run).
+# Manifold from: scripts/fit_manifold.py --dim 4 --out-manifold data/manifold_h_4d_full.npz
+name: pullback_4d
+manifold: data/manifold_h_4d_full.npz
+judge: sequential
