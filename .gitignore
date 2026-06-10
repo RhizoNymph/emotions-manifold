@@ -24,7 +24,11 @@ data/manifold_y.npz
 .vscode/
 .idea/
 
-data
+# Ignore data dir contents except the canonical emotion-word list,
+# which is a tiny tracked input that tests depend on. ("data/*" not
+# "data": git cannot re-include a file under an excluded directory.)
+data/*
+!data/emotion_words.txt
 logs
 results
 CLAUDE.md

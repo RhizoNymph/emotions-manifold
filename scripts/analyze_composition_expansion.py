@@ -17,6 +17,8 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from scipy import stats
 
+from manifold_emotions.analysis.stats import bootstrap_mean_ci as bootstrap_ci
+
 
 def load_summary(path):
     if not Path(path).exists():
@@ -40,13 +42,6 @@ def compute_gaps(summary):
             "dist_mid_gap": lin["dist_from_mid"] - pb["dist_from_mid"],
         })
     return rows
-
-
-def bootstrap_ci(arr, n_boot=10000, seed=42):
-    rng = np.random.default_rng(seed)
-    bs = np.array([rng.choice(arr, size=len(arr), replace=True).mean()
-                    for _ in range(n_boot)])
-    return float(arr.mean()), tuple(np.percentile(bs, [2.5, 97.5]).tolist())
 
 
 def main():
