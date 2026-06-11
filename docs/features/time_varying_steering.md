@@ -8,67 +8,82 @@ should follow temporally.
 
 ## Scope
 
-- Implement segmented generation: divide 96-token output into K=8
-  segments of 12 tokens each.
-- For each segment, apply a different waypoint vector from the
-  30-waypoint pullback / geodesic / linear trajectory.
-- Run on a small set of pairs (default 3; chained set of 10) across
-  both vLLM nodes.
-- Compare time-varying (TV) behavioral metrics against the constant-
-  vector (CV) baseline from the n=40 chord experiment.
+- Segmented generation: divide the token budget into K segments,
+  applying one steering vector per segment (`/v1/completions` with a
+  manually-rebuilt Gemma template between segments).
+- The **schedule axis** separating time-variation from its confounds:
+  - `varying` — segment k uses waypoint `w[seg_indices[k]]` (hard
+    switches; finer K = smaller switches at the same token budget).
+  - `constant` — every segment uses the path-midpoint waypoint
+    `w[(num_waypoints-1)//2]`: the control that isolates the
+    segmented call structure itself.
+- Phase-split judging like the chord experiment: `judge="none"`
+  generates and saves completions (resumable); re-running with
+  `judge="batched"` rates everything in one Batches pass and writes
+  per-pair results.
+- The day-7 n=40 design: four conditions (tv8 = 8×12, tv16 = 16×6,
+  cv8, cv16) on `experiments/pairs/alift_n40.json`, pairs striped
+  across localhost and node1 via `VLLM_BASE_URL`.
 
 ## Non-scope
 
-- Per-token vector switching. The 8-segment chunking is the simplest
-  reasonable approximation; true per-token would require either
-  modifying the vLLM fork (the existing wire format sends one vector
-  per request) or 96× more HTTP calls per generation.
-- Per-segment judging. We judge the full concatenated continuation,
-  matching the constant-vector setup.
+- Per-token vector switching (would require fork wire-format changes;
+  the n=40 result makes it poorly motivated — see results/day7.md).
+- Per-segment judging. We judge the full concatenated continuation.
 
-## Implementation
+## Data/control flow
 
-- Uses vLLM's **/v1/completions** endpoint (not chat/completions) with
-  a manually-built Gemma chat template:
-
-      <start_of_turn>user
-      {user_prompt}<end_of_turn>
-      <start_of_turn>model
-      {assistant_partial...}
-
-- After each segment, the generated text is appended to the partial
-  and the prompt is rebuilt — the steering vector for the next
-  segment is sent fresh in the next request.
-- The chat-completions endpoint's `continue_final_message` mode does
-  not work reliably with this fork because the Gemma chat template
-  strips trailing tokens during re-rendering ("continue_final_message
-  is set but the final message does not appear in the chat after
-  applying the chat template").
+1. `compute_pullback` → 30 waypoints per method (pullback / geodesic /
+   linear), scaled ×8.
+2. `schedule_indices(30, K, schedule)` picks the per-segment waypoint
+   index ladder ([0,4,8,12,17,21,25,29] for varying K=8; [14]×K for
+   constant).
+3. Per (method, prompt): K sequential `/v1/completions` calls, each
+   re-sending the manually-built Gemma template with the accumulated
+   assistant text and that segment's steering vector. Stop-token ends
+   generation early.
+4. Completions saved to `{out_dir}/completions_{start}_{end}.json`
+   (the n=12-era script never saved them — that data is judge-cache
+   only and cannot be re-judged).
+5. Judge phase collects ALL pending pairs' texts into one judge call
+   (sequential or batched), then writes per-pair results in the
+   original n=12 schema: `{"pair", "schedule", "metrics": {method:
+   {off_my_e, my_line, ratings_va}}}`.
 
 ## Files
 
-- `src/manifold_emotions/manifold/pullback.py` — `compute_pullback`
-  provides the per-waypoint vectors (pullback / geodesic / linear).
-- `scripts/experiments/run_time_varying_steering.py` — main entry; runs a single
-  pair (or default trio).
-- `scripts/experiments/run_time_varying_steering.py --pairs experiments/pairs/time_varying_n13.json` — runs 10 additional pairs split
-  5/5 across localhost and node1.
-- `scripts/analysis/analyze_time_varying.py` — compares TV vs CV per method
-  per metric; writes `results/time_varying/_summary.json` and
-  `tv_vs_cv.png`.
+- `src/manifold_emotions/experiments/time_varying.py` — `TVRunConfig`,
+  `run_tv_pairs`, `schedule_indices`, metrics. Key exports re-exported
+  from `manifold_emotions.experiments`.
+- `scripts/experiments/run_time_varying_steering.py` — CLI; defaults
+  reproduce the n=12 design; `--schedule/--judge/--out-dir/--segments/
+  --tokens-per-segment/--concurrency/--force`.
+- `scripts/analysis/analyze_time_varying.py` — TV-vs-baseline
+  comparison; `--cv-format tv` compares two TV-schema dirs with
+  identical metric definitions (the chord-format myl metric measures
+  a different quantity — per-waypoint distance-to-line vs single-
+  completion distance-to-midpoint — so cross-format comparisons are
+  descriptive only).
+- `tests/test_time_varying.py` — pinned index ladders, schedule
+  semantics, metric hand-values, phase/resume, failure tolerance.
 
 ## Invariants
 
-- Same scale (8.0), same prompts, same K=30 waypoints in subspace as
-  the constant-vector baseline so per-pair TV vs CV comparison is
-  matched.
-- Same Claude judge model and prompt template as the constant-vector
-  experiment; ratings cached per text_id under `ratings_{pair}.json`.
+- Same scale (8.0), same prompts, same K=30 subspace waypoints as the
+  constant-vector chord baseline.
+- Result files keep the n=12 schema so the analyzer reads any
+  condition directory unchanged.
+- One out-dir per condition; never overwrite an earlier condition.
+- TV-vs-CV claims must compare same-format, same-segmentation
+  conditions (tv8↔cv8, tv16↔cv16) — the n=12 analysis compared TV
+  against the unsegmented chord baseline and mistook the segmentation
+  artifact for a time-variation effect.
 
 ## Outputs
 
-- `results/time_varying/{pair}.json` — per-pair TV result with the
-  three method completions and their off-M_y / M_y-line metrics.
-- `results/time_varying/ratings_{pair}.json` — Claude judge cache.
-- `results/time_varying/_summary.json` — TV vs CV aggregate.
-- `results/time_varying/tv_vs_cv.png` — 2×3 grid of TV-vs-CV scatter.
+- n=12 era (preserved): `results/time_varying/…`
+- n=40 four-condition: `results/time_varying_n40/{tv8,tv16,cv8,cv16}/`
+  (completions_, per-pair results, ratings_cache.json) and
+  `results/time_varying_n40/analysis_*/` (_summary.json + tv_vs_cv.png
+  for tv8↔cv8, tv16↔cv16, and the four vs-chord descriptive
+  comparisons). Day journal: `results/day7.md`.
