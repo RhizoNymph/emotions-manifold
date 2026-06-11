@@ -140,7 +140,14 @@ def main() -> None:
                 ci_lo, ci_hi = float(ci.low), float(ci.high)
             except Exception:
                 ci_lo, ci_hi = float("nan"), float("nan")
-            summary[key] = {"mean": mean, "ci": [ci_lo, ci_hi], "n": len(diff)}
+            try:
+                # Two-sided per FableAnalysis §2.3 — the n=40 primary endpoint
+                # is pullback myl here (tv8 vs cv8).
+                _, p_2s = stats.wilcoxon(diff, alternative="two-sided")
+            except Exception:
+                p_2s = float("nan")
+            summary[key] = {"mean": mean, "ci": [ci_lo, ci_hi],
+                            "wilcoxon_p_2sided": float(p_2s), "n": len(diff)}
 
     # Method-comparison summaries under TV
     print("\n=== Time-varying method gaps (vs linear) ===")
