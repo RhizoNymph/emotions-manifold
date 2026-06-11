@@ -62,6 +62,9 @@ async def main() -> None:
                         help="condition output directory (use a fresh one per "
                              "condition; never overwrite earlier results)")
     parser.add_argument("--results-suffix", default="")
+    parser.add_argument("--concurrency", type=int, default=8,
+                        help="concurrent generations per process (each one is "
+                             "K sequential segment calls)")
     parser.add_argument("--force", action="store_true",
                         help="re-run pairs whose outputs already exist")
     args = parser.parse_args()
@@ -82,6 +85,7 @@ async def main() -> None:
         num_segments=args.segments,
         tokens_per_segment=args.tokens_per_segment,
         results_suffix=args.results_suffix,
+        concurrency=args.concurrency,
     )
     report = await run_tv_pairs(config, run, pairs, force=args.force)
 
