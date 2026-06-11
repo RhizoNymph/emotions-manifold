@@ -67,11 +67,11 @@ numbers.
 - `src/manifold_emotions/steering/pullback_experiment.py` — wraps the
   geometric pullback with generation + judging and computes
   off-M_y E and M_y-line distance per trajectory.
-- `scripts/run_pullback_experiment.py` — CLI for a single pair or
+- `scripts/experiments/run_chord.py` — CLI for a single pair or
   default 4-pair sweep; accepts `--sigma <float>` or `--sigma knn:K`.
 - `scripts/run_pullback_sigma_sweep.py` — sweeps a list of σ values on
   a single pair, reusing the same kernel-barycenter machinery.
-- `scripts/dashboard.py` — interactive σ slider on the 3D viewer; only
+- `scripts/plotting/dashboard.py` — interactive σ slider on the 3D viewer; only
   constant σ for now.
 - `tests/test_pullback.py` — unit tests for kernel weights, median NN,
   K-NN distance, endpoint snapping, hull membership, and adaptive σ

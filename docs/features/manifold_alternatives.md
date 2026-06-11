@@ -31,9 +31,9 @@ production PCA-8 + clustered-NN-bandwidth setup on two axes:
 
 ## Files
 
-- `scripts/embedding_isometry.py` — fast geometric-isometry-only
+- `scripts/analysis/embedding_isometry.py` — fast geometric-isometry-only
   comparison; writes `results/manifold_alternatives/embedding_isometry.{json,png}`.
-- `scripts/manifold_alternatives.py` — full comparison including
+- `scripts/analysis/manifold_alternatives.py` — full comparison including
   geodesic isometry under adaptive vs fixed KDE bandwidth; writes
   `results/manifold_alternatives/adaptive_kde_geodesic.{json,png}`.
 
