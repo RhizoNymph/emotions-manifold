@@ -18,6 +18,6 @@ while pgrep -f run_refusal_probe.py >/dev/null 2>&1; do
 done
 echo "$(date '+%F %T')  refusal done, starting eval-awareness probe" | tee -a "$LOG"
 
-uv run python -u scripts/run_eval_awareness_probe.py 2>&1 | tee -a logs/eval_awareness.log
+uv run python -u scripts/experiments/run_eval_awareness_probe.py 2>&1 | tee -a logs/eval_awareness.log
 
 echo "$(date '+%F %T')  eval-awareness probe complete" | tee -a "$LOG"

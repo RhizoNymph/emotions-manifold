@@ -30,9 +30,9 @@ manifold more dimensions to bend through?
 
 ## Files
 
-- `scripts/run_dimension_ablation.py` — original sweep, writes
+- `scripts/experiments/run_dimension_ablation.py` — original sweep, writes
   `results/riemannian_analysis/dimension_ablation.{json,png}`.
-- `scripts/run_denser_dim_sweep.py` — fills 6/10/12/14/24, writes
+- `scripts/experiments/run_dimension_ablation.py --dims 6,10,12,14,24` — fills 6/10/12/14/24, writes
   `results/riemannian_analysis/dimension_ablation_denser.{json,png}`.
   Plot includes both new and original points.
 

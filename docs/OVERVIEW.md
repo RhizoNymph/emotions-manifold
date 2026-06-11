@@ -50,7 +50,7 @@ Features Index:
     doc: docs/features/behavior_manifold.md
   pullback:
     description: Kernel-barycenter inverse of an M_y straight line into M_h subspace; supports constant or adaptive K-NN-distance σ
-    entry_points: [scripts/experiments/run_chord.py, scripts/run_pullback_sigma_sweep.py, scripts/plotting/dashboard.py]
+    entry_points: [scripts/experiments/run_chord.py, scripts/experiments/run_pullback_sigma_sweep.py, scripts/plotting/dashboard.py]
     depends_on: [manifold_h, behavior_manifold]
     doc: docs/features/pullback.md
   steering_experiment:
@@ -70,7 +70,7 @@ Features Index:
     doc: docs/features/manifold_alternatives.md
   dimension_ablation:
     description: G_E geodesic isometry edge as a function of PCA subspace dimensionality (4/8/16/32 + denser 6/10/12/14/24)
-    entry_points: [scripts/run_dimension_ablation.py (archive branch), scripts/run_denser_dim_sweep.py (archive branch)]
+    entry_points: [scripts/experiments/run_dimension_ablation.py]
     depends_on: [manifold_h, behavior_manifold]
     doc: docs/features/dimension_ablation.md
   d6_behavioral:
@@ -80,7 +80,7 @@ Features Index:
     doc: docs/features/d6_behavioral.md
   time_varying_steering:
     description: Stepping through waypoints during generation (K=8 segments × 12 tokens) via vLLM /v1/completions with manual Gemma chat template — Goodfire's central distinguishing claim
-    entry_points: [scripts/run_time_varying_steering.py (archive branch), scripts/analysis/analyze_time_varying.py]
+    entry_points: [scripts/experiments/run_time_varying_steering.py, scripts/analysis/analyze_time_varying.py]
     depends_on: [manifold_h, behavior_manifold]
     doc: docs/features/time_varying_steering.md
   positive_controls:
