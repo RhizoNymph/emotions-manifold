@@ -18,6 +18,6 @@ while pgrep -f run_tone_experiment.py >/dev/null 2>&1; do
 done
 echo "$(date '+%F %T')  tone done, starting refusal probe" | tee -a "$LOG"
 
-uv run python -u scripts/run_refusal_probe.py 2>&1 | tee -a logs/refusal_probe.log
+uv run python -u scripts/experiments/run_refusal_probe.py 2>&1 | tee -a logs/refusal_probe.log
 
 echo "$(date '+%F %T')  refusal probe complete" | tee -a "$LOG"

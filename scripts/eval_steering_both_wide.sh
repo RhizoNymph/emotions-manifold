@@ -13,7 +13,7 @@ mkdir -p logs
 SCALES="-500,-200,-100,-50,-20,-10,-5,0,+5,+10,+20,+50,+100,+200,+500"
 
 echo "$(date '+%F %T')  ==== differential wide sweep ====" | tee -a "$LOG"
-uv run python -u scripts/run_eval_awareness_steering.py \
+uv run python -u scripts/experiments/run_eval_awareness_steering.py \
   --direction-file results/eval_awareness_v2/full_eval_vs_neutral_mean.npy \
   --scales="$SCALES" \
   --results-dir results/eval_steering_diff_wide \
@@ -21,7 +21,7 @@ uv run python -u scripts/run_eval_awareness_steering.py \
   2>&1 | tee -a "$LOG"
 
 echo "$(date '+%F %T')  ==== contrastive wide sweep ====" | tee -a "$LOG"
-uv run python -u scripts/run_eval_awareness_steering.py \
+uv run python -u scripts/experiments/run_eval_awareness_steering.py \
   --direction-file results/eval_awareness_contrastive/full_contrastive_eval.npy \
   --scales="$SCALES" \
   --results-dir results/eval_steering_contr_wide \

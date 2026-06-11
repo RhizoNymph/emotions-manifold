@@ -49,11 +49,11 @@ should follow temporally.
 
 - `src/manifold_emotions/manifold/pullback.py` — `compute_pullback`
   provides the per-waypoint vectors (pullback / geodesic / linear).
-- `scripts/run_time_varying_steering.py` — main entry; runs a single
+- `scripts/experiments/run_time_varying_steering.py` — main entry; runs a single
   pair (or default trio).
-- `scripts/run_time_varying_chain.sh` — runs 10 additional pairs split
+- `scripts/experiments/run_time_varying_steering.py --pairs experiments/pairs/time_varying_n13.json` — runs 10 additional pairs split
   5/5 across localhost and node1.
-- `scripts/analyze_time_varying.py` — compares TV vs CV per method
+- `scripts/analysis/analyze_time_varying.py` — compares TV vs CV per method
   per metric; writes `results/time_varying/_summary.json` and
   `tv_vs_cv.png`.
 
