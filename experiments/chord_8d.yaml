@@ -1,0 +1,6 @@
+# Production chord experiment: 8-D PCA manifold, clustered_NN bandwidth,
+# sequential Claude judge. Writes to data/pullback/ and results/pullback/
+# (same locations as the original run_pullback_experiment.py).
+name: pullback
+manifold: data/manifold_h.npz
+judge: sequential

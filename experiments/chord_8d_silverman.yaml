@@ -1,0 +1,9 @@
+# 8-D chord experiment with Silverman KDE bandwidth instead of the
+# production clustered_NN heuristic (bandwidth-sensitivity behavioral run).
+# Manifold from: scripts/fit_manifold.py --dim 8 --bandwidth silverman \
+#   --out-manifold data/manifold_h_8d_silverman.npz
+name: pullback_8d_silverman
+manifold: data/manifold_h_8d_silverman.npz
+judge: none  # phase-1 generation; judging via the batched phase-2 pass
+summary_extra:
+  bandwidth_heuristic: silverman
