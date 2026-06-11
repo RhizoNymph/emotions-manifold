@@ -14,13 +14,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 
 from ..vectors.diff_in_means import EmotionVectors
 from ..vectors.pca import PCAResult, fit_pca
-from .density import GaussianKDE, clustered_bandwidth
+from .density import GaussianKDE, clustered_bandwidth, silverman_bandwidth
 from .metric import DensityGeometry
+
+# How to choose the KDE bandwidth in the PCA subspace: a named heuristic
+# or an explicit positive scalar.
+BandwidthSpec = float | Literal["clustered_nn", "silverman"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,11 +107,32 @@ class FittedManifold:
             )
 
 
+def resolve_bandwidth(spec: BandwidthSpec, centroids_subspace: np.ndarray) -> float:
+    """Resolve a bandwidth spec to a scalar for the given subspace centroids.
+
+    - ``"clustered_nn"`` (production default): median nearest-neighbor
+      distance. Right for tightly clustered data — neighbors overlap at
+      e^{-0.5} ≈ 0.61 of peak, distant centroids do not, which gives the
+      geodesic optimizer real density signal.
+    - ``"silverman"``: Silverman's rule in the subspace. Smoother; the
+      bandwidth-sensitivity experiments showed a small geodesic-specific
+      edge over clustered_nn at 8-D.
+    - a float: used as-is.
+    """
+    if spec == "clustered_nn":
+        return clustered_bandwidth(centroids_subspace, multiplier=1.0)
+    if spec == "silverman":
+        return float(silverman_bandwidth(centroids_subspace))
+    if isinstance(spec, int | float):
+        return float(spec)
+    raise ValueError(f"unknown bandwidth spec: {spec!r}")
+
+
 def fit_manifold(
     emotion_vectors: EmotionVectors,
     *,
     num_components: int = 64,
-    bandwidth: float | None = None,
+    bandwidth: BandwidthSpec | None = None,
     alpha: float = 1.0,
     beta: float = 0.01,
 ) -> tuple[FittedManifold, PCAResult]:
@@ -118,7 +144,9 @@ def fit_manifold(
 
     Defaults:
     - ``num_components=64`` matches Goodfire's spline-fitting setup.
-    - ``bandwidth=None`` selects Silverman's rule in the subspace.
+    - ``bandwidth=None`` selects the ``"clustered_nn"`` heuristic
+      (the production choice); pass ``"silverman"`` or a float to
+      override. See ``resolve_bandwidth``.
     - ``alpha=1.0, beta=0.01`` gives ~100× dynamic range between
       on- and off-manifold; tune downward if geodesics overshoot
       centroids, upward if they hug them too tightly.
@@ -133,13 +161,9 @@ def fit_manifold(
     pca = fit_pca(emotion_vectors.vectors.astype(np.float32), n_components=num_components)
     centroids_subspace = pca.projections.astype(np.float32)
 
-    if bandwidth is None:
-        # Clustered-data heuristic, not Silverman: emotion centroids form
-        # 30 distinct clusters, not samples from a smooth unimodal density.
-        # Multiplier 1.0 = bandwidth equals median nearest-neighbor distance;
-        # neighbors overlap at e^{-0.5} ≈ 0.61 of peak, distant centroids
-        # do not overlap — gives the geodesic optimizer real signal.
-        bandwidth = clustered_bandwidth(centroids_subspace, multiplier=1.0)  # type: ignore[arg-type]
+    resolved_bandwidth = resolve_bandwidth(
+        "clustered_nn" if bandwidth is None else bandwidth, centroids_subspace
+    )
 
     manifold = FittedManifold(
         labels=emotion_vectors.labels,
@@ -147,7 +171,7 @@ def fit_manifold(
         pca_components=pca.components.astype(np.float32),
         pca_mean=pca.mean.astype(np.float32),
         pca_explained_variance_ratio=pca.explained_variance_ratio.astype(np.float64),
-        kde_bandwidth=float(bandwidth),
+        kde_bandwidth=resolved_bandwidth,
         alpha=float(alpha),
         beta=float(beta),
     )
