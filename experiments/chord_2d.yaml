@@ -1,0 +1,8 @@
+# 2-D variant of the chord experiment — falsification test of the
+# compensation reframe (day 8). PC1≈valence, PC2≈arousal, so the 2-D
+# subspace is nearly the V/A plane itself; see results/day8.md for the
+# pre-registered competing predictions.
+# Manifold from: scripts/fit_manifold.py --dim 2 --out-manifold data/manifold_h_2d_full.npz
+name: pullback_2d
+manifold: data/manifold_h_2d_full.npz
+judge: none
