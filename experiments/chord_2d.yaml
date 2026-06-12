@@ -2,7 +2,17 @@
 # compensation reframe (day 8). PC1≈valence, PC2≈arousal, so the 2-D
 # subspace is nearly the V/A plane itself; see results/day8.md for the
 # pre-registered competing predictions.
-# Manifold from: scripts/fit_manifold.py --dim 2 --out-manifold data/manifold_h_2d_full.npz
+#
+# Bandwidth: Silverman, NOT the production clustered_nn — at d=2 the
+# clustered_nn heuristic collapses to 0.64 and ~5% of geodesics go NaN
+# (numerically singular energy between clusters). Silverman (2.73) is
+# clean (0/40 NaN) and is the geodesic-FAVORING heuristic per the 8-D
+# bandwidth comparison, so it is the conservative choice for a
+# falsification test: a null edge under Silverman is a stronger null.
+# Manifold from: fit_manifold(ev, num_components=2, bandwidth="silverman")
+#   → data/manifold_h_2d_silverman.npz
 name: pullback_2d
-manifold: data/manifold_h_2d_full.npz
-judge: none
+manifold: data/manifold_h_2d_silverman.npz
+judge: none  # phase-1 generation; judging via the batched phase-2 pass
+summary_extra:
+  bandwidth_heuristic: silverman
