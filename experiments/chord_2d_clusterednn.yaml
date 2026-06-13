@@ -1,0 +1,11 @@
+# d=2 chord with the PRODUCTION clustered_nn bandwidth — bandwidth
+# sensitivity check for the day-8 falsification (the primary d=2 run uses
+# Silverman because clustered_nn is numerically singular at d=2, ~5% NaN
+# geodesics). This run confirms the geodesic edge null is not an artifact of
+# the Silverman choice; NaN-geodesic pairs are dropped from the geodesic arm.
+# Manifold: scripts/fit_manifold.py --dim 2 --out-manifold data/manifold_h_2d_full.npz
+name: pullback_2d_clusterednn
+manifold: data/manifold_h_2d_full.npz
+judge: none
+summary_extra:
+  bandwidth_heuristic: clustered_nn
