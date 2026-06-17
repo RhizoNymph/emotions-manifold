@@ -1,0 +1,15 @@
+# Parametric-spline chord experiment (4-D). Same construction as the 8-D
+# variant but on the 4-D PCA subspace (where the ambient G_E geodesic edge is
+# significant), so the spline surface geodesic is tested against the dimension
+# at which curvature behaviorally mattered most.
+#
+# Spline artifact: scripts/fit_spline_manifold.py \
+#   --source-manifold data/manifold_h_4d_full.npz --tag 4d --smoothing 0.1
+name: pullback_spline_4d
+manifold: data/manifold_h_4d_full.npz
+spline: data/manifold_spline_4d.npz
+judge: none
+summary_extra:
+  construction: thin_plate_spline
+  spline_smoothing: 0.1
+  parameterization: valence_arousal
