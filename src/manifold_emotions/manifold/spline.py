@@ -78,7 +78,7 @@ class SplineManifold:
     """
 
     labels: tuple[str, ...]
-    control_coords: np.ndarray  # (N, 2) raw (valence, arousal)
+    control_coords: np.ndarray  # (N, 2) surface coords, one per label (see parameterization)
     weights: np.ndarray  # (N, d) TPS nonlinear weights W (standardized-coord basis)
     affine: np.ndarray  # (3, d) TPS affine part A, rows = [const, u_x, u_y]
     coord_mean: np.ndarray  # (2,)
@@ -90,6 +90,13 @@ class SplineManifold:
     kde_bandwidth: float
     alpha: float
     beta: float
+    # How ``control_coords`` was constructed. "valence_arousal": the raw M_y (V, A)
+    # readout (many-to-one, so the fit is lossy). "diffusion_map_2": a bijective
+    # diffusion-2 coordinate of the activation centroids (one distinct point per
+    # emotion, so smoothing=0 interpolates exactly). Purely descriptive — the
+    # surface machinery treats ``control_coords`` as an opaque 2-D parameter space,
+    # so downstream code (chord endpoint lookup, geodesics) is parameterization-agnostic.
+    parameterization: str = "valence_arousal"
 
     @property
     def num_components(self) -> int:
@@ -177,11 +184,19 @@ class SplineManifold:
             kde_bandwidth=np.array([self.kde_bandwidth], dtype=np.float64),
             alpha=np.array([self.alpha], dtype=np.float64),
             beta=np.array([self.beta], dtype=np.float64),
+            parameterization=np.array(self.parameterization, dtype=object),
         )
 
     @classmethod
     def load(cls, path: Path) -> SplineManifold:
         with np.load(path, allow_pickle=True) as data:
+            # ``parameterization`` was added after the first V/A artifacts were
+            # written; default to valence_arousal so those still load.
+            parameterization = (
+                str(data["parameterization"])
+                if "parameterization" in data.files
+                else "valence_arousal"
+            )
             return cls(
                 labels=tuple(str(x) for x in data["labels"]),
                 control_coords=data["control_coords"],
@@ -196,6 +211,7 @@ class SplineManifold:
                 kde_bandwidth=float(data["kde_bandwidth"][0]),
                 alpha=float(data["alpha"][0]),
                 beta=float(data["beta"][0]),
+                parameterization=parameterization,
             )
 
     # -- fitting ---------------------------------------------------------------
@@ -213,6 +229,7 @@ class SplineManifold:
         alpha: float = 1.0,
         beta: float = 0.01,
         smoothing: float = 0.0,
+        parameterization: str = "valence_arousal",
     ) -> SplineManifold:
         """Solve the thin-plate spline through (control_coords -> centroids_subspace).
 
@@ -269,4 +286,5 @@ class SplineManifold:
             kde_bandwidth=float(kde_bandwidth),
             alpha=float(alpha),
             beta=float(beta),
+            parameterization=str(parameterization),
         )

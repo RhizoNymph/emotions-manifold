@@ -39,11 +39,12 @@ ORIGINAL_PAIRS = {
     ("brooding", "pleased"): -0.209,
 }
 
-# Methods compared against linear; linear itself is the baseline.
-METHODS = ["pullback", "geodesic", "spline_induced", "spline_density"]
+# Methods compared against linear; linear itself is the baseline. Overridable via
+# --methods so frugal chains (e.g. spline-only, pullback/geodesic skipped) analyze.
+DEFAULT_METHODS = ["pullback", "geodesic", "spline_induced", "spline_density"]
 
 
-def load_pair(results_dir: Path, s: str, e: str) -> dict | None:
+def load_pair(results_dir: Path, s: str, e: str, methods: list[str]) -> dict | None:
     path = results_dir / f"{s}_{e}.json"
     if not path.exists():
         alt = results_dir / f"{e}_{s}.json"
@@ -57,7 +58,7 @@ def load_pair(results_dir: Path, s: str, e: str) -> dict | None:
     out: dict[str, float] = {"manifold_dim": d.get("manifold_dim")}
     out["li_myl"] = t["linear"]["my_geodesic_distance"]
     out["li_off"] = t["linear"]["off_manifold_energy"]
-    for m in METHODS:
+    for m in methods:
         if m not in t:
             return None
         out[f"{m}_myl"] = t[m]["my_geodesic_distance"]
@@ -71,8 +72,14 @@ def main() -> None:
     ap.add_argument("--out-dir", type=Path, required=True)
     ap.add_argument("--plan", type=Path, default=Path("data/probe/alift_expansion_plan.json"))
     ap.add_argument("--label", default=None)
+    ap.add_argument(
+        "--methods", default=None,
+        help="comma-separated methods to compare vs linear "
+             f"(default: {','.join(DEFAULT_METHODS)})",
+    )
     args = ap.parse_args()
     label = args.label or args.results_dir.name
+    methods = args.methods.split(",") if args.methods else list(DEFAULT_METHODS)
 
     plan = json.loads(args.plan.read_text())
     expansion = {
@@ -85,19 +92,19 @@ def main() -> None:
     nan_pairs, missing = [], []
     manifold_dim = None
     for (s, e), a_lift in all_pairs.items():
-        m = load_pair(args.results_dir, s, e)
+        m = load_pair(args.results_dir, s, e, methods)
         if m is None:
             missing.append(f"{s}->{e}")
             continue
         manifold_dim = m["manifold_dim"] or manifold_dim
         vals = [m["li_myl"], m["li_off"]] + [
-            m[f"{x}_{k}"] for x in METHODS for k in ("myl", "off")
+            m[f"{x}_{k}"] for x in methods for k in ("myl", "off")
         ]
         if not all(np.isfinite(vals)):
             nan_pairs.append(f"{s}->{e}")
             continue
         row = {"pair": f"{s}->{e}", "a_lift": a_lift}
-        for x in METHODS:
+        for x in methods:
             row[f"{x}_margin"] = m["li_myl"] - m[f"{x}_myl"]
             row[f"{x}_off_gap"] = m["li_off"] - m[f"{x}_off"]
         rows.append(row)
@@ -115,7 +122,7 @@ def main() -> None:
     summary: dict = {"n_pairs": len(rows), "manifold_dim": manifold_dim, "methods": {}}
 
     print(f"\n=== {label} (n={len(rows)}) — margin vs linear (positive favors method) ===")
-    for x in METHODS:
+    for x in methods:
         for metric, key in (("M_y-line", "margin"), ("off-M_y E", "off_gap")):
             arr = np.array([r[f"{x}_{key}"] for r in rows])
             lo, hi = bootstrap_ci(arr, np.mean)
