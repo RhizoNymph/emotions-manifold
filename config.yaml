@@ -6,7 +6,11 @@ model:
     quantization: gguf
     num_layers: 60
     target_layer: 40
-    hook_point: post_mlp
+    # Fork renamed the hook post_mlp -> post_block (46eaec14a, Jun 23);
+    # steering propagation is unchanged (delta rides the residual into the
+    # next layer's fused add), so this is the same injection point as every
+    # earlier run.
+    hook_point: post_block
     tensor_parallel_size: 1
 
 vllm_server:
