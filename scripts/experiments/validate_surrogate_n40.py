@@ -235,15 +235,20 @@ async def run_judge(args: argparse.Namespace) -> None:
     va_dir.mkdir(parents=True, exist_ok=True)
     coh_dir.mkdir(parents=True, exist_ok=True)
 
-    results = []
-    for f in files:
+    # Pairs are judged concurrently: each pair is two Batches-API jobs (V/A,
+    # then coherence), and batch queue latency dominates wall-clock, so a
+    # sequential loop over 40 pairs costs ~a day where a concurrent one costs
+    # ~one batch turnaround. Per-pair caches keep this resumable either way.
+    sem = asyncio.Semaphore(args.judge_concurrency)
+
+    async def _judge_pair(f: Path) -> dict | None:
         vec = _load_pair_vectors(f)
         s, e, targets, opt_pred = vec["s"], vec["e"], vec["targets"], vec["opt_pred"]
         k = vec["opt_full"].shape[0]
         cpath = completions_dir / f"{_slug(s, e)}.json"
         if not cpath.exists():
             log.warning("surrogate_n40.judge.no_completions", pair=f"{s}->{e}", path=str(cpath))
-            continue
+            return None
         blob = json.loads(cpath.read_text())
         opt_cont = _deserialize(blob["opt"])
         lin_cont = _deserialize(blob["lin"])
@@ -253,12 +258,13 @@ async def run_judge(args: argparse.Namespace) -> None:
 
         if args.dry_run:
             log.info("surrogate_n40.judge.dry_run_pair", pair=f"{s}->{e}", passages=len(passages))
-            continue
+            return None
 
-        # V/A: matched opt+linear in the SAME batch, exactly as the 5-pair version.
-        va = await judge_texts_batched(config, passages, cache_path=va_dir / f"{_slug(s, e)}.json")
-        # Coherence: same A/B/C judge as the composition experiments, same passages.
-        coh = await judge_coherence(config, passages, cache_path=coh_dir / f"{_slug(s, e)}.json")
+        async with sem:
+            # V/A: matched opt+linear in the SAME batch, exactly as the 5-pair version.
+            va = await judge_texts_batched(config, passages, cache_path=va_dir / f"{_slug(s, e)}.json")
+            # Coherence: same A/B/C judge as the composition experiments, same passages.
+            coh = await judge_coherence(config, passages, cache_path=coh_dir / f"{_slug(s, e)}.json")
 
         opt_mean, _ = _aggregate_waypoint_behavior(opt_cont, _index_ratings(va, "opt", s, e), k)
         lin_mean, _ = _aggregate_waypoint_behavior(lin_cont, _index_ratings(va, "lin", s, e), k)
@@ -271,7 +277,7 @@ async def run_judge(args: argparse.Namespace) -> None:
                    if tid.startswith(f"lin_{s}_{e}_") and tid in coh]
         opt_cf, lin_cf = _coherent_frac(opt_coh), _coherent_frac(lin_coh)
 
-        results.append({
+        row = {
             "pair": f"{s}->{e}",
             "optimized_actual_dist": opt_d,
             "linear_actual_dist": lin_d,
@@ -283,9 +289,13 @@ async def run_judge(args: argparse.Namespace) -> None:
             "coherence_gap": opt_cf - lin_cf,  # >0 => optimized more coherent than linear
             "n_opt": len(opt_coh),
             "n_lin": len(lin_coh),
-        })
+        }
         print(f"  {s}->{e}: opt {opt_d:.3f}  lin {lin_d:.3f}  headroom {lin_d-opt_d:+.3f}  "
               f"(promised {pred_d:.3f})  coh opt {opt_cf:.2f} lin {lin_cf:.2f}")
+        return row
+
+    gathered = await asyncio.gather(*(_judge_pair(f) for f in files))
+    results = [r for r in gathered if r is not None]
 
     if args.dry_run:
         print(f"[dry-run] judge would score {len(files)} pairs "
@@ -337,6 +347,8 @@ def main() -> None:
     j = sub.add_parser("judge", help="judge V/A + coherence over saved completions")
     j.add_argument("--out", type=Path,
                    default=Path("results/surrogate_optimizer/validation_results_n40.json"))
+    j.add_argument("--judge-concurrency", type=int, default=12,
+                   help="pairs judged concurrently (each pair = 2 batch jobs)")
     j.set_defaults(func=run_judge)
 
     args = ap.parse_args()
