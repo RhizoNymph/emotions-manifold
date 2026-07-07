@@ -15,7 +15,7 @@ Overview:
     manifold_h: PCA-projected centroids + density-aware KDE Riemannian
                 metric (G_E) over the activation subspace.
     behavior_y: Anthropic-style Claude judge rates each story for
-                (valence, arousal) on [-5, +5], yielding M_y centroids.
+                (valence, arousal) on a 1-7 scale, yielding M_y centroids.
     geodesic: JAX-based shortest-path solver under G_E.
     pullback: kernel-weighted barycenter inverse — given an M_y target
               point y*, return an M_h subspace point as Σ w_i(y*) h_i
