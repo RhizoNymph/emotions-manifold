@@ -1,0 +1,31 @@
+# Bijective-spline chord experiment (8-D). The behavioral test of the faithful
+# Goodfire analog: a thin-plate spline over a *bijective* diffusion-2 coordinate
+# of the 171 activation centroids (one distinct point per emotion, so smoothing=0
+# interpolates the centroids exactly, residual ~0.03), vs the shared linear
+# baseline. Surface geodesics route on-manifold; this run judges whether that
+# on-manifold routing actually reaches the V/A target better than linear, or
+# whether the wall is the activation->behavior coupling (Wall 2), not the geometry.
+#
+# GPU-frugal: only spline_induced + spline_density + linear are generated
+# (pullback/geodesic skipped, ~40% fewer waypoints steered). The pullback
+# geometry is still computed on CPU so the paths npz stays complete.
+#
+# Spline artifact (bijective diffusion-2, smoothing 0.0):
+#   uv run python scripts/fit_spline_manifold.py \
+#     --source-manifold data/manifold_h.npz --parameterization diffusion \
+#     --out data/manifold_spline_bijective_8d.npz
+#
+# Two-phase batched judging (judge: none, then
+# scripts/orchestration/run_chain_batched_judge.py --chain pullback_spline_bijective_8d).
+name: pullback_spline_bijective_8d
+manifold: data/manifold_h.npz
+spline: data/manifold_spline_bijective_8d.npz
+judge: none
+trajectories:
+  - spline_induced
+  - spline_density
+  - linear
+summary_extra:
+  construction: thin_plate_spline
+  spline_smoothing: 0.0
+  parameterization: diffusion_map_2

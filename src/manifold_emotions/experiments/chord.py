@@ -55,6 +55,12 @@ log = structlog.get_logger(__name__)
 
 JudgeMode = Literal["sequential", "batched", "none"]
 
+# Every trajectory the nojudge phase can emit. The three ambient trajectories are
+# always available; the two spline trajectories only when a spline manifold is set.
+AMBIENT_TRAJECTORIES: tuple[str, ...] = ("pullback", "geodesic", "linear")
+SPLINE_TRAJECTORIES: tuple[str, ...] = ("spline_induced", "spline_density")
+ALL_TRAJECTORIES: tuple[str, ...] = AMBIENT_TRAJECTORIES + SPLINE_TRAJECTORIES
+
 JudgeFn = Callable[..., Awaitable[dict[str, TextRating]]]
 
 NEUTRAL_PROMPTS: tuple[str, ...] = (
@@ -96,6 +102,13 @@ class ChordRunConfig:
     # first-fundamental-form and density-weighted metrics) — are generated and
     # judged alongside pullback/geodesic/linear. Only supported with judge:none.
     spline_path: Path | None = None
+    # Optional GPU-frugality knob (nojudge phase only): restrict which trajectories
+    # are actually generated. ``None`` = all applicable (pullback/geodesic/linear,
+    # plus the two spline trajectories when a spline is set). Selecting e.g.
+    # ("spline_induced", "spline_density", "linear") skips pullback+geodesic
+    # generation (~40% fewer waypoints steered). The pullback geometry is still
+    # computed (cheap, CPU) so paths/geometry metrics stay populated.
+    trajectories: tuple[str, ...] | None = None
 
     @property
     def data_dir(self) -> Path:
@@ -111,7 +124,7 @@ class ChordRunConfig:
         known = {
             "name", "manifold", "judge", "num_waypoints", "num_prompts",
             "max_tokens", "concurrency", "steering_scale", "sigma",
-            "prompts", "summary_extra", "spline",
+            "prompts", "summary_extra", "spline", "trajectories",
         }
         unknown = set(raw) - known
         if unknown:
@@ -119,6 +132,19 @@ class ChordRunConfig:
         if raw.get("judge", "sequential") not in ("sequential", "batched", "none"):
             raise ValueError(f"invalid judge mode in {path}: {raw['judge']!r}")
         spline = raw.get("spline")
+        trajectories = raw.get("trajectories")
+        if trajectories is not None:
+            invalid = [t for t in trajectories if t not in ALL_TRAJECTORIES]
+            if invalid:
+                raise ValueError(
+                    f"invalid trajectories in {path}: {invalid} "
+                    f"(valid: {sorted(ALL_TRAJECTORIES)})"
+                )
+            if not spline and any(t in SPLINE_TRAJECTORIES for t in trajectories):
+                raise ValueError(
+                    f"{path}: spline trajectories selected but no 'spline' manifold set"
+                )
+            trajectories = tuple(trajectories)
         return cls(
             name=raw["name"],
             manifold_path=Path(raw["manifold"]),
@@ -132,6 +158,7 @@ class ChordRunConfig:
             prompts=tuple(raw.get("prompts", NEUTRAL_PROMPTS)),
             summary_extra=raw.get("summary_extra", {}),
             spline_path=Path(spline) if spline else None,
+            trajectories=trajectories,
         )
 
 
@@ -268,19 +295,34 @@ async def _run_pair_nojudge(
         num_waypoints=num_waypoints, sigma=sigma,
     )
 
-    methods = {
-        "pullback": np.asarray(g.pullback_full, dtype=np.float32) * run.steering_scale,
-        "geodesic": np.asarray(g.geodesic_full, dtype=np.float32) * run.steering_scale,
-        "linear": np.asarray(g.linear_full, dtype=np.float32) * run.steering_scale,
-    }
+    # GPU-frugality: only build steering paths for the selected trajectories.
+    # ``run.trajectories is None`` means "all applicable". The pullback geometry
+    # ``g`` is always computed (cheap CPU) so geometry/paths stay populated.
+    selected = run.trajectories
+
+    def keep(name: str) -> bool:
+        return selected is None or name in selected
+
+    methods: dict[str, np.ndarray] = {}
+    for name, full in (
+        ("pullback", g.pullback_full),
+        ("geodesic", g.geodesic_full),
+        ("linear", g.linear_full),
+    ):
+        if keep(name):
+            methods[name] = np.asarray(full, dtype=np.float32) * run.steering_scale
+
     spline_sub: dict[str, np.ndarray] = {}
-    if run.spline_path is not None:
+    if run.spline_path is not None and any(keep(n) for n in SPLINE_TRAJECTORIES):
         spline = SplineManifold.load(run.spline_path)
-        spline_steer, spline_sub = _spline_steer_paths(
+        spline_steer, spline_sub_all = _spline_steer_paths(
             spline, start, end,
             num_waypoints=num_waypoints, steering_scale=run.steering_scale,
         )
-        methods.update(spline_steer)
+        for name in SPLINE_TRAJECTORIES:
+            if keep(name):
+                methods[name] = spline_steer[name]
+                spline_sub[name] = spline_sub_all[name]
     prompts_used = list(run.prompts[:num_prompts])
 
     records: list[CompletionRecord] = []

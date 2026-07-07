@@ -29,10 +29,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-from scipy.spatial.distance import pdist, squareform
 from sklearn.ensemble import RandomForestRegressor
 
 from manifold_emotions.behavior.manifold import BehaviorManifold
+from manifold_emotions.manifold.diffusion import diffusion_embed
 from manifold_emotions.manifold.fit import FittedManifold
 from manifold_emotions.manifold.geodesic import fit_geodesic, linear_interpolation
 from manifold_emotions.manifold.pullback import compute_pullback
@@ -40,22 +40,6 @@ from manifold_emotions.manifold.spline import SplineManifold
 from manifold_emotions.manifold.spline_geodesic import fit_spline_geodesic
 
 K = 30
-
-
-def diffusion_embed(centroids: np.ndarray, n_components: int = 2) -> np.ndarray:
-    sq = squareform(pdist(centroids)) ** 2
-    eps = float(np.median(sq[sq > 0]))
-    Km = np.exp(-sq / eps)
-    q = Km.sum(axis=1)
-    Ka = Km / np.outer(q, q)
-    d = Ka.sum(axis=1)
-    ds = np.sqrt(d)
-    Ps = Ka / np.outer(ds, ds)
-    Ps = 0.5 * (Ps + Ps.T)
-    vals, vecs = np.linalg.eigh(Ps)
-    vals, vecs = vals[::-1], vecs[:, ::-1]
-    psi = (vecs / ds[:, None])[:, 1 : n_components + 1]
-    return (psi * vals[1 : n_components + 1][None, :]).astype(np.float64)
 
 
 def harvest_surrogate(results_dir: Path, manifold, behavior) -> RandomForestRegressor:

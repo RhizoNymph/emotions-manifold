@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from manifold_emotions.manifold.diffusion import diffusion_embed
 from manifold_emotions.manifold.spline import SplineManifold
 
 
@@ -105,3 +106,61 @@ def test_save_load_roundtrip(tmp_path) -> None:
     assert np.allclose(spline.embed_np(q), loaded.embed_np(q), atol=1e-5)
     assert loaded.smoothing == spline.smoothing
     assert loaded.labels == spline.labels
+
+
+def _diffusion_targets(n: int = 40, d: int = 8, seed: int = 5) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    return rng.normal(size=(n, d)).astype(np.float64)
+
+
+def test_diffusion_parameterization_interpolates_exactly() -> None:
+    """Bijective diffusion-2 coords + smoothing 0 interpolate the centroids."""
+    targets = _diffusion_targets()
+    u = diffusion_embed(targets, 2)
+    n, d = targets.shape
+    spline = SplineManifold.fit(
+        labels=tuple(f"e{i}" for i in range(n)),
+        control_coords=u,
+        centroids_subspace=targets,
+        pca_components=np.eye(d, 16, dtype=np.float64),
+        pca_mean=np.zeros(16, dtype=np.float64),
+        kde_bandwidth=1.0,
+        smoothing=0.0,
+        parameterization="diffusion_map_2",
+    )
+    resid = np.linalg.norm(spline.embed_np(u.astype(np.float32)) - targets, axis=1)
+    scale = np.linalg.norm(targets, axis=1).mean()
+    assert resid.mean() < 0.05 * scale
+    assert spline.parameterization == "diffusion_map_2"
+
+
+def test_parameterization_roundtrips(tmp_path) -> None:
+    targets = _diffusion_targets(n=20, d=4)
+    u = diffusion_embed(targets, 2)
+    spline = SplineManifold.fit(
+        labels=tuple(f"e{i}" for i in range(20)),
+        control_coords=u,
+        centroids_subspace=targets,
+        pca_components=np.eye(4, 16, dtype=np.float64),
+        pca_mean=np.zeros(16, dtype=np.float64),
+        kde_bandwidth=1.0,
+        smoothing=0.0,
+        parameterization="diffusion_map_2",
+    )
+    path = tmp_path / "bij.npz"
+    spline.save(path)
+    assert SplineManifold.load(path).parameterization == "diffusion_map_2"
+
+
+def test_load_without_parameterization_defaults_to_va(tmp_path) -> None:
+    """Artifacts written before the field existed still load (as valence_arousal)."""
+    coords = _grid_coords()
+    targets = _paraboloid_targets(coords)
+    spline = _make_spline(coords, targets, smoothing=0.0)
+    path = tmp_path / "legacy.npz"
+    spline.save(path)
+    # Rewrite the npz without the parameterization key to mimic an old artifact.
+    with np.load(path, allow_pickle=True) as data:
+        arrays = {k: data[k] for k in data.files if k != "parameterization"}
+    np.savez_compressed(path, **arrays)
+    assert SplineManifold.load(path).parameterization == "valence_arousal"
