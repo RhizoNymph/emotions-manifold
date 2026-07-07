@@ -43,6 +43,8 @@ from ..behavior.manifold import BehaviorManifold
 from ..config import Config
 from ..manifold.fit import FittedManifold
 from ..manifold.pullback import SigmaSpec, compute_pullback
+from ..manifold.spline import SplineManifold
+from ..manifold.spline_geodesic import fit_spline_geodesic
 from ..steering.pullback_experiment import (
     PullbackExperimentReport,
     run_pullback_experiment,
@@ -89,6 +91,11 @@ class ChordRunConfig:
     sigma: SigmaSpec = None
     prompts: tuple[str, ...] = NEUTRAL_PROMPTS
     summary_extra: dict = field(default_factory=dict)
+    # Optional parametric-spline manifold. When set, two extra trajectories —
+    # ``spline_induced`` and ``spline_density`` (surface geodesics under the
+    # first-fundamental-form and density-weighted metrics) — are generated and
+    # judged alongside pullback/geodesic/linear. Only supported with judge:none.
+    spline_path: Path | None = None
 
     @property
     def data_dir(self) -> Path:
@@ -104,13 +111,14 @@ class ChordRunConfig:
         known = {
             "name", "manifold", "judge", "num_waypoints", "num_prompts",
             "max_tokens", "concurrency", "steering_scale", "sigma",
-            "prompts", "summary_extra",
+            "prompts", "summary_extra", "spline",
         }
         unknown = set(raw) - known
         if unknown:
             raise ValueError(f"unknown keys in {path}: {sorted(unknown)}")
         if raw.get("judge", "sequential") not in ("sequential", "batched", "none"):
             raise ValueError(f"invalid judge mode in {path}: {raw['judge']!r}")
+        spline = raw.get("spline")
         return cls(
             name=raw["name"],
             manifold_path=Path(raw["manifold"]),
@@ -123,6 +131,7 @@ class ChordRunConfig:
             sigma=raw.get("sigma"),
             prompts=tuple(raw.get("prompts", NEUTRAL_PROMPTS)),
             summary_extra=raw.get("summary_extra", {}),
+            spline_path=Path(spline) if spline else None,
         )
 
 
@@ -163,18 +172,51 @@ def _geometry_dict(g) -> dict:
     }
 
 
-def _save_paths_npz(path: Path, g) -> None:
+def _save_paths_npz(path: Path, g, extra: dict | None = None) -> None:
     """Subspace + full-residual trajectories for downstream plotting."""
-    np.savez_compressed(
-        path,
-        my_path=g.my_path,
-        pullback_sub=g.pullback_sub,
-        geodesic_sub=g.geodesic_sub,
-        linear_sub=g.linear_sub,
-        pullback_full=g.pullback_full,
-        geodesic_full=g.geodesic_full,
-        linear_full=g.linear_full,
-    )
+    arrays = {
+        "my_path": g.my_path,
+        "pullback_sub": g.pullback_sub,
+        "geodesic_sub": g.geodesic_sub,
+        "linear_sub": g.linear_sub,
+        "pullback_full": g.pullback_full,
+        "geodesic_full": g.geodesic_full,
+        "linear_full": g.linear_full,
+    }
+    if extra:
+        arrays.update(extra)
+    np.savez_compressed(path, **arrays)
+
+
+def _spline_steer_paths(
+    spline: SplineManifold,
+    start: str,
+    end: str,
+    *,
+    num_waypoints: int,
+    steering_scale: float,
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+    """Build the two spline-geodesic steering trajectories for a pair.
+
+    Returns ``(steer, sub)`` where ``steer[name]`` is the (K, hidden) scaled
+    full-residual steering path and ``sub[name]`` the (K, d) subspace path
+    (for the paths npz). Endpoints are snapped to the exact subspace centroids
+    so the spline paths share endpoints with pullback/geodesic/linear.
+    """
+    idx = {lab: i for i, lab in enumerate(spline.labels)}
+    i, j = idx[start], idx[end]
+    va_s, va_e = spline.control_coords[i], spline.control_coords[j]
+    c_s, c_e = spline.centroids_subspace[i], spline.centroids_subspace[j]
+    steer: dict[str, np.ndarray] = {}
+    sub: dict[str, np.ndarray] = {}
+    for name, metric in (("spline_induced", "induced"), ("spline_density", "density")):
+        res = fit_spline_geodesic(
+            spline, va_s, va_e, metric=metric, num_waypoints=num_waypoints,
+            snap_start=c_s, snap_end=c_e,
+        )
+        sub[name] = res.waypoints.astype(np.float32)
+        steer[name] = (spline.unproject(res.waypoints).astype(np.float32) * steering_scale)
+    return steer, sub
 
 
 def _summary_dict(
@@ -231,6 +273,14 @@ async def _run_pair_nojudge(
         "geodesic": np.asarray(g.geodesic_full, dtype=np.float32) * run.steering_scale,
         "linear": np.asarray(g.linear_full, dtype=np.float32) * run.steering_scale,
     }
+    spline_sub: dict[str, np.ndarray] = {}
+    if run.spline_path is not None:
+        spline = SplineManifold.load(run.spline_path)
+        spline_steer, spline_sub = _spline_steer_paths(
+            spline, start, end,
+            num_waypoints=num_waypoints, steering_scale=run.steering_scale,
+        )
+        methods.update(spline_steer)
     prompts_used = list(run.prompts[:num_prompts])
 
     records: list[CompletionRecord] = []
@@ -253,9 +303,12 @@ async def _run_pair_nojudge(
     log.info("experiments.chord.completions_written",
              pair=f"{start}->{end}", n=len(records), path=str(completions_path))
 
-    _save_paths_npz(run.data_dir / f"paths_{start}_{end}{results_suffix}.npz", g)
+    extra = {f"{name}_sub": arr for name, arr in spline_sub.items()}
+    _save_paths_npz(run.data_dir / f"paths_{start}_{end}{results_suffix}.npz", g, extra=extra)
 
-    # NaN skeleton — a later batch-judging pass mutates this in place.
+    # NaN skeleton — a later batch-judging pass mutates this in place. Trajectory
+    # keys follow whatever methods were generated (pullback/geodesic/linear plus
+    # the two spline trajectories when a spline manifold is configured).
     skeleton = {
         "pair": [start, end],
         "manifold_dim": int(manifold.num_components),
@@ -271,7 +324,7 @@ async def _run_pair_nojudge(
                 "waypoint_valence": [float("nan")] * num_waypoints,
                 "waypoint_arousal": [float("nan")] * num_waypoints,
             }
-            for method in ("pullback", "geodesic", "linear")
+            for method in methods
         },
         "phase": "nojudge",
         **run.summary_extra,
@@ -313,6 +366,12 @@ async def run_chord_pair(
 
     run.data_dir.mkdir(parents=True, exist_ok=True)
     run.results_dir.mkdir(parents=True, exist_ok=True)
+
+    if run.spline_path is not None and run.judge != "none":
+        raise ValueError(
+            "spline trajectories are only supported with judge: none "
+            "(two-phase batched flow); set judge: none in the config"
+        )
 
     if run.judge == "none":
         return await _run_pair_nojudge(

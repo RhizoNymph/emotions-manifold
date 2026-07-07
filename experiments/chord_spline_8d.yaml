@@ -1,0 +1,16 @@
+# Parametric-spline chord experiment (8-D). Adds two surface-geodesic
+# trajectories — spline_induced (first fundamental form) and spline_density
+# (density-weighted) — alongside pullback/geodesic/linear, sharing the same
+# linear baseline. Two-phase batched judging (judge: none, then
+# scripts/orchestration/run_chain_batched_judge.py --chain pullback_spline_8d).
+#
+# Spline artifact: scripts/fit_spline_manifold.py --source-manifold data/manifold_h.npz \
+#                    --tag 8d --smoothing 0.1
+name: pullback_spline_8d
+manifold: data/manifold_h.npz
+spline: data/manifold_spline_8d.npz
+judge: none
+summary_extra:
+  construction: thin_plate_spline
+  spline_smoothing: 0.1
+  parameterization: valence_arousal

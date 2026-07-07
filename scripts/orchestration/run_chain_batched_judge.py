@@ -143,7 +143,9 @@ def _rebuild_summary_for_pair(
         buckets.setdefault(key, []).append(ratings_by_id[tid])
 
     K = my_path.shape[0]
-    for method in ("pullback", "geodesic", "linear"):
+    # Rebuild every trajectory present in the skeleton — pullback/geodesic/linear
+    # plus any spline trajectories (spline_induced/spline_density) added upstream.
+    for method in list(summary["trajectories"].keys()):
         wp_va = np.full((K, 2), np.nan, dtype=np.float32)
         for wp in range(K):
             samples = buckets.get((method, wp), [])
