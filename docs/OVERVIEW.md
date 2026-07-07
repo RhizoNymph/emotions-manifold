@@ -88,6 +88,11 @@ Features Index:
     entry_points: [scripts/analysis/analyze_4d_linear_vs_8d_linear.py]
     depends_on: []
     doc: docs/features/positive_controls.md
+  surrogate_validation:
+    description: Offline RandomForest surrogate (steering vector -> judged V/A) proposes trust-constrained optimized vectors per chord target; GPU validation checks real headroom vs matched linear and coherence, over the top-5 (selected) and all n=40 (un-selected) pairs
+    entry_points: [scripts/analysis/surrogate_optimizer.py, scripts/experiments/validate_surrogate_vectors.py, scripts/experiments/validate_surrogate_n40.py, scripts/analysis/analyze_surrogate_n40.py]
+    depends_on: [pullback, manifold_h, behavior_manifold, steering_experiment]
+    doc: docs/features/surrogate_validation.md
   dashboard:
     description: 3D plotly Dash viewer for M_h paths and M_y projections; interactive σ slider for pullback
     entry_points: [scripts/plotting/dashboard.py]

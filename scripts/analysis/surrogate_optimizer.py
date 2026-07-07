@@ -109,7 +109,12 @@ def main() -> None:
     ap.add_argument("--pool-size", type=int, default=60000)
     ap.add_argument("--trust-pct", type=float, default=90.0,
                     help="drop candidates beyond this percentile of training k-NN radius")
-    ap.add_argument("--n-validate", type=int, default=5, help="top-headroom pairs to dump for GPU")
+    ap.add_argument("--n-validate", type=int, default=5,
+                    help="top-headroom pairs to dump for GPU; -1 dumps all pairs")
+    ap.add_argument("--val-subdir", default="validation_vectors",
+                    help="subdir of --out-dir for opt_*.npz; use a fresh name to not overwrite")
+    ap.add_argument("--summary-name", default="_summary.json",
+                    help="filename under --out-dir for the run summary")
     args = ap.parse_args()
 
     rng = np.random.default_rng(0)
@@ -188,11 +193,12 @@ def main() -> None:
     # 5. dump top-headroom optimized trajectories for GPU validation
     args.out_dir.mkdir(parents=True, exist_ok=True)
     dump.sort(key=lambda x: -x["headroom"])
-    val_dir = args.out_dir / "validation_vectors"
-    val_dir.mkdir(exist_ok=True)
+    val_dir = args.out_dir / args.val_subdir
+    val_dir.mkdir(parents=True, exist_ok=True)
     scale = 8.0
     dumped = []
-    for item in dump[:args.n_validate]:
+    n_dump = len(dump) if args.n_validate < 0 else args.n_validate
+    for item in dump[:n_dump]:
         s, e = item["pair"]
         full = manifold.unproject(item["opt_sub"]).astype(np.float32) * scale  # (K, hidden)
         np.savez_compressed(val_dir / f"opt_{s}_{e}.npz",
@@ -212,9 +218,9 @@ def main() -> None:
         "validation_dumped": dumped,
         "per_pair": per_pair,
     }
-    (args.out_dir / "_summary.json").write_text(json.dumps(summary, indent=2))
+    (args.out_dir / args.summary_name).write_text(json.dumps(summary, indent=2))
     print(f"\n  dumped {len(dumped)} validation-vector sets to {val_dir}/")
-    print(f"  saved {args.out_dir / '_summary.json'}")
+    print(f"  saved {args.out_dir / args.summary_name}")
 
 
 if __name__ == "__main__":
