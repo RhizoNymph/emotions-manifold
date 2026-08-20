@@ -11,11 +11,19 @@ display:
 - ``Random``: random orthogonal 3-D rotation of the 8-D space — useful
   to confirm that interesting structure isn't a PC-1/2 artifact.
 
-For any selected (start, end) pair the dashboard overlays:
+For any selected (start, end) pair the dashboard overlays any of:
 
-- The M_h geodesic (from precomputed cache)
+- The M_h geodesic (ambient G_E, from precomputed cache)
 - The M_h linear chord
 - The M_h kernel-barycenter pullback of the M_y geodesic
+- Spline surface-geodesics, computed live from the saved SplineManifold
+  artifacts (``data/manifold_spline_*.npz``) and drawn dashed:
+    * Bijective spline (diffusion-2 coordinate) — induced + density metrics,
+      the faithful Goodfire construction that wins target-tracking. 8-D only.
+    * V/A spline (lossy coordinate) — the failure mode, in red.
+  Only the methods whose artifact exists at the current dim are offered; when a
+  pair was in the day-10 judged run, the info card also shows how the spline
+  actually steered vs linear (off-M_y and M_y-line gaps).
 - (Optional) an iso-surface of the marginal KDE density in the
   3-D projection, so you can see where the manifold lives.
 
@@ -57,6 +65,8 @@ from manifold_emotions.config import load_config
 from manifold_emotions.manifold.fit import FittedManifold
 from manifold_emotions.manifold.geodesic import linear_interpolation
 from manifold_emotions.manifold.pullback import construct_pullback_path
+from manifold_emotions.manifold.spline import SplineManifold
+from manifold_emotions.manifold.spline_geodesic import fit_spline_geodesic
 
 GEODESIC_CACHE = Path("data/geodesics_cache.npz")
 PAIR_ALIGNMENT = Path("results/pair_alignment.json")
@@ -65,11 +75,71 @@ PAIR_ALIGNMENT = Path("results/pair_alignment.json")
 MANIFOLD_4D_PATH = Path("data/manifold_h_4d_full.npz")
 GEODESIC_CACHE_4D = Path("data/geodesics_cache_4d.npz")
 
+# Saved bijective-spline behavioral run (the day-10 judged condition), keyed by
+# pair — used to annotate the info card with the "how did it actually steer"
+# numbers when the selected pair was in that experiment.
+SPLINE_BEHAVIORAL_DIR = Path("results/pullback_spline_bijective_8d")
+
 PATH_COLORS = {
     "geodesic": "#0066cc",
     "linear":   "#888888",
     "pullback": "#9933cc",
+    # Spline geodesics computed live from the saved SplineManifold artifacts.
+    # Bijective (diffusion-2 coord) = the faithful Goodfire method that wins;
+    # V/A (lossy coord) = the failure mode, colored red so it reads as "wanders".
+    "spline_bijective_induced": "#e8590c",
+    "spline_bijective_density": "#f59f00",
+    "spline_va_induced":        "#e03131",
 }
+
+# Registry of spline methods to offer, per manifold dim. Each entry loads one
+# SplineManifold artifact and a surface-metric; only entries whose artifact file
+# exists on disk are shown. The dashboard computes the surface geodesic live
+# (fit_spline_geodesic) and projects it into the same 3-D view as the other paths.
+# ``key`` doubles as the checklist value and the PATH_COLORS lookup.
+_SPLINE_SPECS: dict[int, list[dict]] = {
+    8: [
+        {
+            "key": "spline_bijective_induced",
+            "label": " Bijective spline · induced  (faithful Goodfire, wins)",
+            "artifact": Path("data/manifold_spline_bijective_8d.npz"),
+            "metric": "induced",
+        },
+        {
+            "key": "spline_bijective_density",
+            "label": " Bijective spline · density",
+            "artifact": Path("data/manifold_spline_bijective_8d.npz"),
+            "metric": "density",
+        },
+        {
+            "key": "spline_va_induced",
+            "label": " V/A spline · induced  (lossy coord, fails)",
+            "artifact": Path("data/manifold_spline_8d.npz"),
+            "metric": "induced",
+        },
+    ],
+    4: [
+        {
+            "key": "spline_va_induced",
+            "label": " V/A spline · induced  (lossy coord)",
+            "artifact": Path("data/manifold_spline_4d.npz"),
+            "metric": "induced",
+        },
+    ],
+}
+
+
+def _load_spline_methods(dim: int) -> dict[str, tuple[SplineManifold, str]]:
+    """Load every available spline artifact for ``dim`` into {key: (spline, metric)}.
+
+    Silently skips specs whose artifact file is missing, so the UI only offers
+    methods that can actually be drawn (bijective is 8-D-only, for instance).
+    """
+    out: dict[str, tuple[SplineManifold, str]] = {}
+    for spec in _SPLINE_SPECS.get(dim, []):
+        if spec["artifact"].exists():
+            out[spec["key"]] = (SplineManifold.load(spec["artifact"]), spec["metric"])
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -120,6 +190,33 @@ def _load_alignment_predictions() -> dict[frozenset[str], dict]:
     out: dict[frozenset[str], dict] = {}
     for r in json.loads(PAIR_ALIGNMENT.read_text()):
         out[frozenset({r["start"], r["end"]})] = r
+    return out
+
+
+def _load_spline_behavioral() -> dict[frozenset[str], dict]:
+    """Judged per-waypoint metrics from the saved bijective-spline run.
+
+    Returns {pair -> {method -> {off_manifold_energy, my_geodesic_distance}}} for
+    the pairs that were in the day-10 behavioral experiment, so the info card can
+    show how the spline trajectory actually steered vs linear.
+    """
+    out: dict[frozenset[str], dict] = {}
+    if not SPLINE_BEHAVIORAL_DIR.exists():
+        return out
+    for path in SPLINE_BEHAVIORAL_DIR.glob("*.json"):
+        try:
+            row = json.loads(path.read_text())
+        except (OSError, json.JSONDecodeError):
+            continue
+        start, end = row["pair"]
+        trajs = row.get("trajectories", {})
+        out[frozenset({start, end})] = {
+            name: {
+                "off_manifold_energy": t.get("off_manifold_energy"),
+                "my_geodesic_distance": t.get("my_geodesic_distance"),
+            }
+            for name, t in trajs.items()
+        }
     return out
 
 
@@ -224,6 +321,7 @@ def make_mh_figure(
     pullback_proj: np.ndarray | None,
     density: tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray] | None,
     axis_labels: tuple[str, str, str],
+    extra_paths: dict[str, np.ndarray] | None = None,
 ) -> go.Figure:
     traces: list[go.BaseTraceType] = []
 
@@ -266,11 +364,16 @@ def make_mh_figure(
     )
 
     def _path_trace(pts: np.ndarray, name: str) -> go.Scatter3d:
+        color = PATH_COLORS.get(name, "#333333")
+        # Spline geodesics get a dashed line so they read as distinct from the
+        # ambient geodesic/linear/pullback even when several overlap.
+        is_spline = name.startswith("spline_")
         return go.Scatter3d(
             x=pts[:, 0], y=pts[:, 1], z=pts[:, 2],
             mode="lines+markers",
-            line={"color": PATH_COLORS[name], "width": 5},
-            marker={"size": 3, "color": PATH_COLORS[name]},
+            line={"color": color, "width": 5,
+                  "dash": "dash" if is_spline else "solid"},
+            marker={"size": 3, "color": color},
             name=name,
         )
 
@@ -280,6 +383,8 @@ def make_mh_figure(
         traces.append(_path_trace(geodesic_proj, "geodesic"))
     if pullback_proj is not None:
         traces.append(_path_trace(pullback_proj, "pullback"))
+    for name, pts in (extra_paths or {}).items():
+        traces.append(_path_trace(pts, name))
 
     fig = go.Figure(data=traces)
     fig.update_layout(
@@ -370,6 +475,7 @@ def build_app(
     waypoints_cache, idx_map = _load_geodesic_cache(geodesic_cache_path)
     measured = _load_measured_deltas()
     predictions = _load_alignment_predictions()
+    spline_behavioral = _load_spline_behavioral()
 
     centroids = manifold.centroids_subspace.astype(np.float64)
     labels = manifold.labels
@@ -382,8 +488,40 @@ def build_app(
     umap_cache: dict[int, object] = {}
 
     dim = centroids.shape[1]
+
+    # Spline methods available at this dim (bijective is 8-D-only). Computed
+    # geodesics are memoized per (start, end, key) so re-selecting is instant.
+    spline_methods = _load_spline_methods(dim)
+    spline_specs = [s for s in _SPLINE_SPECS.get(dim, []) if s["key"] in spline_methods]
+    spline_path_cache: dict[tuple[str, str, str], np.ndarray] = {}
+
+    def _spline_waypoints(start: str, end: str, key: str) -> np.ndarray | None:
+        """Live surface geodesic (K, d) for a pair, memoized. None if unavailable."""
+        if key not in spline_methods:
+            return None
+        ck = (start, end, key)
+        if ck in spline_path_cache:
+            return spline_path_cache[ck]
+        spline, metric = spline_methods[key]
+        sidx = {lab: i for i, lab in enumerate(spline.labels)}
+        if start not in sidx or end not in sidx:
+            return None
+        i, j = sidx[start], sidx[end]
+        res = fit_spline_geodesic(
+            spline, spline.control_coords[i], spline.control_coords[j],
+            metric=metric, num_waypoints=30,
+            snap_start=spline.centroids_subspace[i],
+            snap_end=spline.centroids_subspace[j],
+        )
+        spline_path_cache[ck] = res.waypoints.astype(np.float64)
+        return spline_path_cache[ck]
     app = Dash(__name__,
                title=f"Manifold Emotions Explorer ({dim}-D M_h)")
+    # Zero the browser's default body margin so the 100vh layout fills the
+    # window exactly (no stray outer scrollbar).
+    app.index_string = app.index_string.replace(
+        "<body>", '<body style="margin:0">'
+    )
 
     pca_axis_options = [
         {"label": f"PC{i+1} ({var_ratio[i]*100:.1f}%)", "value": i}
@@ -402,16 +540,18 @@ def build_app(
                 f"cumulative variance={float(var_ratio.sum())*100:.1f}%",
                 style={"color": "#666", "fontSize": "13px"},
             ),
-        ], style={"padding": "10px 20px", "borderBottom": "1px solid #ddd"}),
+        ], style={"padding": "10px 20px", "borderBottom": "1px solid #ddd",
+                  "flex": "0 0 auto"}),
 
         html.Div([
-            # Left: 3D M_h
+            # Left: 3D M_h — fills the full height of the content row.
             html.Div([
-                dcc.Graph(id="mh-graph", style={"height": "640px"}),
-            ], style={"width": "60%", "display": "inline-block",
-                      "verticalAlign": "top"}),
+                dcc.Graph(id="mh-graph", responsive=True,
+                          style={"height": "100%", "width": "100%"}),
+            ], style={"flex": "1 1 60%", "height": "100%", "minWidth": "0"}),
 
-            # Right: controls + M_y + info
+            # Right: controls + M_y + info. Scrolls independently if the
+            # controls are taller than the viewport.
             html.Div([
                 html.Div([
                     html.Label("Projection", style={"fontWeight": "bold"}),
@@ -499,13 +639,25 @@ def build_app(
                     dcc.Checklist(
                         id="show-paths",
                         options=[
-                            {"label": " Geodesic", "value": "geodesic"},
+                            {"label": " Geodesic (ambient G_E)", "value": "geodesic"},
                             {"label": " Linear", "value": "linear"},
                             {"label": " Pullback (M_y geodesic → M_h)",
                              "value": "pullback"},
+                            *[{"label": s["label"], "value": s["key"]}
+                              for s in spline_specs],
                         ],
                         value=["geodesic", "linear"],
                         labelStyle={"display": "block", "marginBottom": "2px"},
+                    ),
+                    html.Div(
+                        "Spline paths are surface geodesics computed live and "
+                        "shown dashed. Bijective = diffusion-2 coordinate "
+                        "(faithful Goodfire); V/A = the lossy coordinate."
+                        if spline_specs else
+                        "(No spline artifacts found for this dim — run "
+                        "scripts/fit_spline_manifold.py to enable them.)",
+                        style={"fontSize": "11px", "color": "#666",
+                               "marginTop": "3px"},
                     ),
                 ], style={"marginBottom": "10px"}),
 
@@ -528,11 +680,12 @@ def build_app(
 
                 dcc.Graph(id="my-graph", style={"height": "320px"}),
 
-            ], style={"width": "39%", "display": "inline-block",
-                      "verticalAlign": "top", "padding": "10px 20px",
+            ], style={"flex": "0 0 39%", "height": "100%",
+                      "overflowY": "auto", "padding": "10px 20px",
                       "boxSizing": "border-box"}),
-        ]),
-    ])
+        ], style={"display": "flex", "flex": "1 1 auto", "minHeight": "0"}),
+    ], style={"display": "flex", "flexDirection": "column",
+              "height": "100vh", "margin": "0"})
 
     @app.callback(
         Output("sigma-readout", "children"),
@@ -632,6 +785,7 @@ def build_app(
         geo_proj: np.ndarray | None = None
         lin_proj: np.ndarray | None = None
         pull_proj: np.ndarray | None = None
+        extra_proj: dict[str, np.ndarray] = {}
 
         if start_idx != end_idx:
             i, j = (start_idx, end_idx) if start_idx < end_idx else (end_idx, start_idx)
@@ -656,6 +810,11 @@ def build_app(
                 pull_sub[0] = centroids[start_idx]
                 pull_sub[-1] = centroids[end_idx]
                 pull_proj = project(pull_sub.astype(np.float32))
+            for key in spline_methods:
+                if key in show_paths:
+                    wp = _spline_waypoints(start, end, key)
+                    if wp is not None:
+                        extra_proj[key] = project(wp)
 
         # Density
         density = None
@@ -668,10 +827,11 @@ def build_app(
         mh_fig = make_mh_figure(
             centroids_proj, labels, color_values, color_label,
             geo_proj, lin_proj, pull_proj, density, axis_labels,
+            extra_paths=extra_proj,
         )
         my_fig = make_my_figure(behavior, start, end)
         card = _build_pair_card(
-            start, end, predictions, measured,
+            start, end, predictions, measured, spline_behavioral,
         )
         return mh_fig, my_fig, card
 
@@ -682,6 +842,7 @@ def _build_pair_card(
     start: str, end: str,
     predictions: dict[frozenset[str], dict],
     measured: dict[frozenset[str], float],
+    spline_behavioral: dict[frozenset[str], dict] | None = None,
 ):
     key = frozenset({start, end})
     pred = predictions.get(key)
@@ -718,7 +879,41 @@ def _build_pair_card(
                    "color": ("#0066cc" if delta > 0.05 else
                              "#cc3300" if delta < -0.05 else "#666")},
         ))
+
+    # Bijective-spline judged run: show how the spline trajectory actually
+    # steered vs linear, when this pair was in that experiment. Lower is better
+    # on both metrics, so a negative gap (spline − linear) means the spline won.
+    beh = (spline_behavioral or {}).get(key)
+    if beh and "linear" in beh:
+        lin = beh["linear"]
+        rows.append(html.Hr(style={"margin": "8px 0"}))
+        rows.append(html.Div(
+            html.B("Bijective-spline judged run (n=40)"),
+            style={"marginBottom": "3px"},
+        ))
+        for name in ("spline_induced", "spline_density"):
+            m = beh.get(name)
+            if not m:
+                continue
+            d_off = _card_gap(m.get("off_manifold_energy"), lin.get("off_manifold_energy"))
+            d_myl = _card_gap(m.get("my_geodesic_distance"), lin.get("my_geodesic_distance"))
+            rows.append(html.Div(
+                f"{name.replace('spline_', '')}: "
+                f"off-M_y {d_off}  ·  M_y-line {d_myl}  (vs linear)",
+                style={"fontSize": "12px", "color": "#333"},
+            ))
+        rows.append(html.Div(
+            "negative = spline closer than linear",
+            style={"fontSize": "10px", "color": "#888"},
+        ))
     return rows
+
+
+def _card_gap(method_val, linear_val) -> str:
+    """Format ``method − linear`` gap for the card, or '—' if unavailable."""
+    if method_val is None or linear_val is None:
+        return "—"
+    return f"{method_val - linear_val:+.3f}"
 
 
 def main() -> None:
